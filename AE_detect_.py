@@ -38,76 +38,15 @@ from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import math_ops
 import matplotlib.patches as patches
 import pyearth as sp
-##Entropy
 from skgof import ks_test, cvm_test, ad_test
-def getData():
-    data = pd.read_csv('./data/DANAOS/EXPRESS ATHENS/mappedDataNew.csv').values
-    draft = data[:,8].reshape(-1,1)
-    wa = data[:,10]
-    ws = data[:,11]
-    stw = data[:,12]
-    swh= data[:,22]
-    bearing = data[:,1]
-    lat = data[:,26]
-    lon = data[:,27]
-    foc = data[:,15]
-
-    trData = np.array(np.append(draft, np.asmatrix([wa, ws, stw, swh,
-                                              bearing ,foc]).T,axis=1)).astype(float)#data[:,26],data[:,27]
-
-    trData = np.nan_to_num(trData)
-    trData = np.array([k for k in trData if  str(k[0])!='nan' and  float(k[2])>0 and float(k[4])>0 and (float(k[3])>=8 ) and float(k[6])>0  ]).astype(float)
+import extractSequentialTasks as extTasks
 
 
-    return trData
+extasks = extTasks.extractSequencialTasks()
 
-# reshape input into [samples, timesteps, features]
-def split_sequence(sequence, n_steps):
-    X, y = list(), list()
-    for i in range(len(sequence)):
-        # find the end of this pattern
-        end_ix = i + n_steps
-        # check if we are beyond the sequence
-        if end_ix > len(sequence) - 1:
-            break
-        # gather input and output parts of the pattern
-        #seq_x, seq_y = sequence[i:end_ix][:, 0:sequence.shape[1] - 1], sequence[end_ix - 1][sequence.shape[1] - 1]
-        seq_ = sequence[i:end_ix][:, :]
-        X.append(seq_)
-        #y.append(seq_y)
-    return array(X)
 
-    # define input sequence
 
-def ApEn(U, m, r) -> float:
-    """Approximate_entropy."""
-
-    def _maxdist(x_i, x_j):
-        return max([abs(ua - va) for ua, va in zip(x_i, x_j)])
-
-    def _phi(m):
-        x = [[U[j] for j in range(i, i + m - 1 + 1)] for i in range(N - m + 1)]
-        C = [
-            len([1 for x_j in x if _maxdist(x_i, x_j) <= r]) / (N - m + 1.0)
-            for x_i in x
-        ]
-        return (N - m + 1.0) ** (-1) * sum(np.log(C))
-
-    N = len(U)
-
-    return abs(_phi(m + 1) - _phi(m))
-
-def entropy(Y):
-    """
-    Also known as Shanon Entropy
-    Reference: https://en.wikipedia.org/wiki/Entropy_(information_theory)
-    """
-    unique, count = np.unique(Y, return_counts=True, axis=0)
-    prob = count/len(Y)
-    en = np.sum((-1)*prob*np.log2(prob))
-    return en
-
-trData = getData()
+trData = extasks.getData()
 
 raw_seq = trData#[:4000]
 seqLSTM = raw_seq
@@ -121,164 +60,9 @@ tasksB=[]
 tasksAMem=[]
 tasksBMem=[]
 lenS = 1000
-startA = 13000
-startB = 50000
-for i in range(0,1):
+start = 13000
+tasksNew = extasks.exctractTasks(3, 20, 1000)
 
-    seqLSTMA = seqLSTM[startA:lenS+startA]
-    seqLSTMAmem = split_sequence(seqLSTMA, n_steps)
-    seqLSTMAmem = seqLSTMAmem.reshape(-1, n_steps, 7)
-
-    seqLSTMB = seqLSTM[startB:lenS + startB]
-    seqLSTMBmem = split_sequence(seqLSTMB, n_steps)
-    seqLSTMBmem = seqLSTMBmem.reshape(-1, n_steps, 7)
-    #tasksA.append(seqLSTM[startA:lenS+startA])
-    #tasksB.append(seqLSTM[startB:lenS+startB])
-    tasksAMem.append(seqLSTMAmem)
-    tasksBMem.append(seqLSTMBmem)
-
-    tasksA.append(seqLSTMA)
-    tasksB.append(seqLSTMB)
-    startA += lenS
-    startB += lenS
-
-seqLSTMA = seqLSTM[21000:22000]
-
-seqLSTMAmem = split_sequence(seqLSTMA,n_steps)
-seqLSTMA = seqLSTMAmem.reshape(-1,n_steps,7)
-
-seqLSTMB = seqLSTM[60000:61000]
-
-seqLSTMBmem = split_sequence(seqLSTMB,n_steps)
-seqLSTMB = seqLSTMBmem.reshape(-1,n_steps,7)
-
-#scipy.stats.ks_2samp(seqLSTMA, seqLSTMB)
-# call MinMaxScaler object
-min_max_scaler = MinMaxScaler()
-seqAScaled = []
-for i in range(0,len(seqLSTMA)):
-    seqScaled =  min_max_scaler.fit_transform(seqLSTMA[i])
-    seqAScaled.append(seqScaled)
-
-X_train_normA = np.array(seqAScaled)
-#X_train_normA = min_max_scaler.fit_transform(seqLSTMA)
-#X_train_normB = min_max_scaler.fit_transform(seqLSTMB)
-min_max_scaler = MinMaxScaler()
-seqBScaled = []
-for i in range(0,len(seqLSTMB)):
-    seqScaled =  min_max_scaler.fit_transform(seqLSTMB[i])
-    seqBScaled.append(seqScaled)
-
-X_train_normB = np.array(seqBScaled)
-#apEn = ApEn(tasksB[0][:,3],2,3)
-#print(str(apEn))
-
-tasks = [X_train_normA.reshape(len(seqLSTMA),n_steps,7), X_train_normB.reshape(len(seqLSTMB),n_steps,7)]
-def pointInRect(point,rect):
-    x1, y1 = rect.xy
-    w, h = rect.get_bbox().width , rect.get_bbox().height
-    x2, y2 = x1+w, y1+h
-    x, y = point
-    if (x1 < x and x < x2):
-        if (y1 < y and y < y2):
-            return True
-    return False
-
-def boxCountingMethod(sequence,ylabel,width = None, height = None):
-    width = 100
-    height = 1
-    ax = plt.gca()
-    colors =['blue','red']
-    colorSeq = ['green', 'black']
-    labels = ['TASKA','TASKB']
-    counters = []
-    rectsDicts = []
-    for i in  range(0,len(sequence)):
-
-        rectsDict = {'rects':[]}
-        for k in range(0,lenS,width): ##columns
-            for n in range(0,int(max(sequence[i]))+1): #rows
-                rect = patches.Rectangle((k, n), width, height, linewidth=1, edgecolor=colors[i], facecolor='none')
-                item = {}
-                item['visited'] = False
-                item['rect'] = rect
-                rectsDict['rects'].append(item)
-
-                #ax.add_patch(rect)
-        plt.plot(sequence[i],c=colorSeq[i],label=labels[i])
-        # Add the patch to the Axes
-        rectsVisited = []
-        #plt.show()
-        counter = 0
-        for n in range(0,len(sequence[i])):
-            for rect in rectsDict['rects']:
-                if pointInRect((n,sequence[i][n]),rect['rect']) and rect['visited']==False:
-                    counter += 1
-                    rect['visited'] = True
-                    rectsDict['rects'].remove(rect)
-                    rectsVisited.append(rect['rect'])
-                    break
-        counters.append(counter)
-        for rect in rectsVisited:
-            ax.add_patch(rect)
-
-        plt.xlabel('time')
-        plt.ylabel(ylabel)
-        rectsDicts.append(rectsVisited)
-    plt.title('Fractal dimension with box counting method for task A: '+ str(counters[0]) +" for task B: "+str(counters[1])+ " with τ = "+str(width)+" and α = " + str(height))
-    plt.legend()
-
-
-    dictA  = rectsDicts[0]
-    dictB = rectsDicts[1]
-    filteredSeqAs = []
-    indices = []
-
-
-    k=0
-    xis = []
-    for i in range(0,len(dictB)): ##iterate rects of B
-            filteredSeqA = []
-            indices = []
-            xi = int(dictB[i].xy[0])
-            xi_hat = int(dictB[i].get_bbox().width)
-            xis.append(xi)
-            if xi != xis[i-1] or i ==0:
-                for n in range(xi,xi+xi_hat):
-                    if pointInRect((n, sequence[0][n]), dictB[i]) == False :
-                         #ax.add_patch(rect['rect'])
-                         flag = True
-                         filteredSeqA.append(sequence[0][n])
-
-                         indices.append(n)
-            #ax.add_patch(plt.plot(filteredSeqA))
-            filteredSeqAs.append(indices)
-
-    print(len(indices))
-
-    #plt.show()
-    return tasksA[0][list(np.concatenate(filteredSeqAs).astype(int))]
-    #print("Fractal dimension: "+str(counter))
-
-
-#memoryA = boxCountingMethod([tasksA[0][:,3],tasksB[0][:,3]],'stw')
-#Joint Entropy
-def jEntropy(Y,X):
-    """
-    H(Y;X)
-    Reference: https://en.wikipedia.org/wiki/Joint_entropy
-    """
-    YX = np.c_[Y,X]
-    return entropy(YX)
-
-#Conditional Entropy
-def cEntropy(Y, X):
-    """
-    conditional entropy = Joint Entropy - Entropy of X
-    H(Y|X) = H(Y;X) - H(X)
-    Reference: https://en.wikipedia.org/wiki/Conditional_entropy
-    """
-    return jEntropy(Y, X) - entropy(X)
 
 class Sampling(layers.Layer):
     """Uses (z_mean, z_log_var) to sample z, the vector encoding a time series."""
@@ -290,10 +74,6 @@ class Sampling(layers.Layer):
         epsilon = tf.keras.backend.random_normal(shape=(batch, dim))
         return z_mean + tf.exp(0.5 * z_log_var) * epsilon
 
-
-def custom_loss(y_true, y_pred):
-    return tf.keras.losses.mean_squared_error(y_true, y_pred)\
-    +tf.keras.losses.kullback_leibler_divergence(y_true, y_pred)
 
 
 class VAE(keras.Model):
@@ -377,7 +157,7 @@ class LSTM_AE_IW(keras.Model):
             encoderOutput = self.encoder(data)
             reconstruction = self.decoder(encoderOutput)
 
-            reconstruction_loss = keras.losses.mean_squared_error(data,reconstruction) +\
+            reconstruction_loss = keras.losses.mean_squared_error(data,reconstruction) #+\
             keras.losses.kullback_leibler_divergence(encoderOutput, reconstruction)
             #keras.losses.mean_squared_error(data,reconstruction) +\
 
@@ -439,630 +219,735 @@ class LSTM_AE(keras.Model):
         }
 
 
-def vae_LSTM_Model():
-    ##ENCODER
-    latent_dim = 100
-
-    encoder_inputs = keras.Input(shape=(n_steps,1000))
-    x = layers.LSTM(500, return_sequences=True )(encoder_inputs)
-    #x = layers.Dense(200, )(x)
-    #x = layers.Flatten()(x)
-    x = TimeDistributed(layers.Dense(1000,  ))(x)
-
-    # x  = tf.reshape(x,shape=(-1,1,16))
-    # x = layers.LSTM(16,name='memory_module')(x)
-    z_mean = layers.Dense(latent_dim, name="z_mean")(x)
-    z_log_var = layers.Dense(latent_dim, name="z_log_var")(x)
-    z = Sampling()([z_mean, z_log_var])
-    encoder = keras.Model(encoder_inputs, [z_mean, z_log_var, z], name="encoder")
-    encoder.summary()
-
-    ##DECODER
-    latent_inputs = keras.Input(shape=(n_steps, latent_dim))
-    x = layers.LSTM(1000,return_sequences=True )(latent_inputs)
-    # x = layers.Reshape((7, 7, 64))(x)
-    #x = layers.Dense(200,  )(x)
-    x = layers.LSTM(500, return_sequences=True )(x)
-    decoder_outputs = TimeDistributed(layers.Dense(1000,  ))(x)
-    decoder = keras.Model(latent_inputs, decoder_outputs, name="decoder")
-    decoder.summary()
-
-    return encoder, decoder
-
-def VAE_windwowIdentificationModel():
-    ##ENCODER
-    latent_dim = 100
-    input_dim = 1000
-
-    encoder_inputs = keras.Input(shape=(input_dim,))
-    x = layers.Dense(input_dim, )(encoder_inputs)
-    x = layers.Dense(500, )(x)
-    #x = layers.Flatten()(x)
-    x = layers.Dense(latent_dim, )(x)
-
-    # x  = tf.reshape(x,shape=(-1,1,16))
-    # x = layers.LSTM(16,name='memory_module')(x)
-    z_mean = layers.Dense(latent_dim, name="z_mean")(x)
-    z_log_var = layers.Dense(latent_dim, name="z_log_var")(x)
-    z = Sampling()([z_mean, z_log_var])
-    encoder = keras.Model(encoder_inputs, [z_mean, z_log_var, z], name="encoder")
-    encoder.summary()
-
-    ##DECODE9
-    latent_inputs = keras.Input(shape=(latent_dim,))
-    x = layers.Dense(latent_dim,)(latent_inputs)
-    # x = layers.Reshape((7, 7, 64))(x)
-    x = layers.Dense(500,  )(x)
-    #x = layers.Dense(700, activation="relu", )(x)
-    decoder_outputs = layers.Dense(input_dim,  )(x)
-    decoder = keras.Model(latent_inputs, decoder_outputs, name="decoder")
-    decoder.summary()
-    return encoder, decoder
-
-
-def windwowIdentificationModelALT():
-    timesteps = 1 # Length of your sequences
-    input_dim = 1000
-    latent_dim = 1000
-    features = 7
-    output_dim = 2000
-    inputs = keras.Input(shape=(n_steps,7 ))
-
-    #encoded = layers.LSTM(700,kernel_initializer='he_uniform',return_sequences=True,activation='relu')(inputs)
-    #encoded = layers.Dense(input_dim, activation='relu')(inputs)
-
-    encoded = layers.LSTM(3,return_sequences=True,)(inputs)
-    #encoded = layers.LSTM(1500, return_sequences=True, )(encoded)
-    #encoded = layers.LSTM(900, return_sequences=True, )(encoded)
-
-
-    encoded = TimeDistributed(layers.Dense(7,  ))(encoded)
-        #TimeDistributed(layers.Dense(latent_dim, ))(encoded)
-        #layers.LSTM(latent_dim, return_sequences=True )(encoded)#
-        #
-
-    #encoded = layers.Dense(latent_dim, activation='relu')(encoded)
-
-    #encoded = layers.RepeatVector(features)(encoded)
-
-    latent_inputs = keras.Input(shape=( n_steps, 7,))
-
-
-    decoded = layers.LSTM(3, return_sequences=True,name='dec2',)(latent_inputs)
-    #decoded = layers.LSTM(1500, return_sequences=True, name='dec3',)(decoded)
-    #decoded = layers.LSTM(700, return_sequences=True, name='dec3')(decoded)
-    #decoded = layers.LSTM(900, return_sequences=True, name='dec4')(decoded)
-    #decoded = layers.LSTM(700, kernel_initializer='he_uniform', activation='relu', return_sequences=True, name='dec3')(decoded)
-    decoded = TimeDistributed(layers.Dense(features, ))(decoded)
-    #decoded = layers.Dense(input_dim, activation="relu", )(decoded)
-
-    #sequence_autoencoder = keras.Model(inputs, decoded)
-    encoder = keras.Model(inputs, encoded)
-    decoder = keras.Model(latent_inputs, decoded, name="decoder")
-
-    return  encoder , decoder
+class AE_detect():
+
+    def __init__(self):
+
+        '''initialize window indentification AE '''
+        encoderA, decoderA = self.windwowIdentificationModel()
+        # print(encoderA.summary())
+        # print(decoderA.summary())
+        self.windAEa = LSTM_AE_IW(encoderA, decoderA)
+        self.windAEa.compile(optimizer=keras.optimizers.Adam())
+
+    def ApEn(self, U, m, r) -> float:
+        """Approximate_entropy."""
+
+        def _maxdist(x_i, x_j):
+            return max([abs(ua - va) for ua, va in zip(x_i, x_j)])
+
+        def _phi(m):
+            x = [[U[j] for j in range(i, i + m - 1 + 1)] for i in range(N - m + 1)]
+            C = [
+                len([1 for x_j in x if _maxdist(x_i, x_j) <= r]) / (N - m + 1.0)
+                for x_i in x
+            ]
+            return (N - m + 1.0) ** (-1) * sum(np.log(C))
+
+        N = len(U)
+
+        return abs(_phi(m + 1) - _phi(m))
+
+    def entropy(self, Y):
+        """
+        Also known as Shanon Entropy
+        Reference: https://en.wikipedia.org/wiki/Entropy_(information_theory)
+        """
+        unique, count = np.unique(Y, return_counts=True, axis=0)
+        prob = count/len(Y)
+        en = np.sum((-1)*prob*np.log2(prob))
+        return en
+
+    def pointInRect(self, point,rect):
+        x1, y1 = rect.xy
+        w, h = rect.get_bbox().width , rect.get_bbox().height
+        x2, y2 = x1+w, y1+h
+        x, y = point
+        if (x1 < x and x < x2):
+            if (y1 < y and y < y2):
+                return True
+        return False
+
+    def boxCountingMethod(self, sequence,ylabel,width = None, height = None):
+        width = 100
+        height = 1
+        ax = plt.gca()
+        colors =['blue','red']
+        colorSeq = ['green', 'black']
+        labels = ['TASKA','TASKB']
+        counters = []
+        rectsDicts = []
+        for i in  range(0,len(sequence)):
+
+            rectsDict = {'rects':[]}
+            for k in range(0,lenS,width): ##columns
+                for n in range(0,int(max(sequence[i]))+1): #rows
+                    rect = patches.Rectangle((k, n), width, height, linewidth=1, edgecolor=colors[i], facecolor='none')
+                    item = {}
+                    item['visited'] = False
+                    item['rect'] = rect
+                    rectsDict['rects'].append(item)
+
+                    #ax.add_patch(rect)
+            plt.plot(sequence[i],c=colorSeq[i],label=labels[i])
+            # Add the patch to the Axes
+            rectsVisited = []
+            #plt.show()
+            counter = 0
+            for n in range(0,len(sequence[i])):
+                for rect in rectsDict['rects']:
+                    if pointInRect((n,sequence[i][n]),rect['rect']) and rect['visited']==False:
+                        counter += 1
+                        rect['visited'] = True
+                        rectsDict['rects'].remove(rect)
+                        rectsVisited.append(rect['rect'])
+                        break
+            counters.append(counter)
+            for rect in rectsVisited:
+                ax.add_patch(rect)
+
+            plt.xlabel('time')
+            plt.ylabel(ylabel)
+            rectsDicts.append(rectsVisited)
+        plt.title('Fractal dimension with box counting method for task A: '+ str(counters[0]) +" for task B: "+str(counters[1])+ " with τ = "+str(width)+" and α = " + str(height))
+        plt.legend()
+
+
+        dictA  = rectsDicts[0]
+        dictB = rectsDicts[1]
+        filteredSeqAs = []
+        indices = []
+
+
+        k=0
+        xis = []
+        for i in range(0,len(dictB)): ##iterate rects of B
+                filteredSeqA = []
+                indices = []
+                xi = int(dictB[i].xy[0])
+                xi_hat = int(dictB[i].get_bbox().width)
+                xis.append(xi)
+                if xi != xis[i-1] or i ==0:
+                    for n in range(xi,xi+xi_hat):
+                        if pointInRect((n, sequence[0][n]), dictB[i]) == False :
+                             #ax.add_patch(rect['rect'])
+                             flag = True
+                             filteredSeqA.append(sequence[0][n])
+
+                             indices.append(n)
+                #ax.add_patch(plt.plot(filteredSeqA))
+                filteredSeqAs.append(indices)
+
+        print(len(indices))
+
+        #plt.show()
+        return tasksA[0][list(np.concatenate(filteredSeqAs).astype(int))]
+        #print("Fractal dimension: "+str(counter))
+
+    #Joint Entropy
+    def jEntropy(self, Y,X):
+        """
+        H(Y;X)
+        Reference: https://en.wikipedia.org/wiki/Joint_entropy
+        """
+        YX = np.c_[Y,X]
+        return entropy(YX)
+
+    #Conditional Entropy
+    def cEntropy(self, Y, X):
+        """
+        conditional entropy = Joint Entropy - Entropy of X
+        H(Y|X) = H(Y;X) - H(X)
+        Reference: https://en.wikipedia.org/wiki/Conditional_entropy
+        """
+        return jEntropy(Y, X) - entropy(X)
+
+
+    def custom_loss(self, y_true, y_pred):
+        return tf.keras.losses.mean_squared_error(y_true, y_pred)\
+        +tf.keras.losses.kullback_leibler_divergence(y_true, y_pred)
+
+    def vae_LSTM_Model(self, ):
+        ##ENCODER
+        latent_dim = 100
+
+        encoder_inputs = keras.Input(shape=(n_steps,1000))
+        x = layers.LSTM(500, return_sequences=True )(encoder_inputs)
+        #x = layers.Dense(200, )(x)
+        #x = layers.Flatten()(x)
+        x = TimeDistributed(layers.Dense(1000,  ))(x)
+
+        # x  = tf.reshape(x,shape=(-1,1,16))
+        # x = layers.LSTM(16,name='memory_module')(x)
+        z_mean = layers.Dense(latent_dim, name="z_mean")(x)
+        z_log_var = layers.Dense(latent_dim, name="z_log_var")(x)
+        z = Sampling()([z_mean, z_log_var])
+        encoder = keras.Model(encoder_inputs, [z_mean, z_log_var, z], name="encoder")
+        encoder.summary()
+
+        ##DECODER
+        latent_inputs = keras.Input(shape=(n_steps, latent_dim))
+        x = layers.LSTM(1000,return_sequences=True )(latent_inputs)
+        # x = layers.Reshape((7, 7, 64))(x)
+        #x = layers.Dense(200,  )(x)
+        x = layers.LSTM(500, return_sequences=True )(x)
+        decoder_outputs = TimeDistributed(layers.Dense(1000,  ))(x)
+        decoder = keras.Model(latent_inputs, decoder_outputs, name="decoder")
+        decoder.summary()
+
+        return encoder, decoder
+
+    def VAE_windwowIdentificationModel(self, ):
+        ##ENCODER
+        latent_dim = 100
+        input_dim = 1000
+
+        encoder_inputs = keras.Input(shape=(input_dim,))
+        x = layers.Dense(input_dim, )(encoder_inputs)
+        x = layers.Dense(500, )(x)
+        #x = layers.Flatten()(x)
+        x = layers.Dense(latent_dim, )(x)
+
+        # x  = tf.reshape(x,shape=(-1,1,16))
+        # x = layers.LSTM(16,name='memory_module')(x)
+        z_mean = layers.Dense(latent_dim, name="z_mean")(x)
+        z_log_var = layers.Dense(latent_dim, name="z_log_var")(x)
+        z = Sampling()([z_mean, z_log_var])
+        encoder = keras.Model(encoder_inputs, [z_mean, z_log_var, z], name="encoder")
+        encoder.summary()
+
+        ##DECODE9
+        latent_inputs = keras.Input(shape=(latent_dim,))
+        x = layers.Dense(latent_dim,)(latent_inputs)
+        # x = layers.Reshape((7, 7, 64))(x)
+        x = layers.Dense(500,  )(x)
+        #x = layers.Dense(700, activation="relu", )(x)
+        decoder_outputs = layers.Dense(input_dim,  )(x)
+        decoder = keras.Model(latent_inputs, decoder_outputs, name="decoder")
+        decoder.summary()
+        return encoder, decoder
+
+
+    def windwowIdentificationModelALT(self, ):
+        timesteps = 1 # Length of your sequences
+        input_dim = 1000
+        latent_dim = 1000
+        features = 7
+        output_dim = 2000
+        inputs = keras.Input(shape=(n_steps,7 ))
+
+        #encoded = layers.LSTM(700,kernel_initializer='he_uniform',return_sequences=True,activation='relu')(inputs)
+        #encoded = layers.Dense(input_dim, activation='relu')(inputs)
+
+        encoded = layers.LSTM(3,return_sequences=True,)(inputs)
+        #encoded = layers.LSTM(1500, return_sequences=True, )(encoded)
+        #encoded = layers.LSTM(900, return_sequences=True, )(encoded)
+
+
+        encoded = TimeDistributed(layers.Dense(7,  ))(encoded)
+            #TimeDistributed(layers.Dense(latent_dim, ))(encoded)
+            #layers.LSTM(latent_dim, return_sequences=True )(encoded)#
+            #
+
+        #encoded = layers.Dense(latent_dim, activation='relu')(encoded)
+
+        #encoded = layers.RepeatVector(features)(encoded)
+
+        latent_inputs = keras.Input(shape=( n_steps, 7,))
+
+
+        decoded = layers.LSTM(3, return_sequences=True,name='dec2',)(latent_inputs)
+        #decoded = layers.LSTM(1500, return_sequences=True, name='dec3',)(decoded)
+        #decoded = layers.LSTM(700, return_sequences=True, name='dec3')(decoded)
+        #decoded = layers.LSTM(900, return_sequences=True, name='dec4')(decoded)
+        #decoded = layers.LSTM(700, kernel_initializer='he_uniform', activation='relu', return_sequences=True, name='dec3')(decoded)
+        decoded = TimeDistributed(layers.Dense(features, ))(decoded)
+        #decoded = layers.Dense(input_dim, activation="relu", )(decoded)
+
+        #sequence_autoencoder = keras.Model(inputs, decoded)
+        encoder = keras.Model(inputs, encoded)
+        decoder = keras.Model(latent_inputs, decoded, name="decoder")
+
+        return  encoder , decoder
+
+    def windwowIdentificationModelGEN(self, ):
+        timesteps = 1 # Length of your sequences
+        input_dim = 2000
+        latent_dim = 2000
+        features = 7
+        output_dim = 2000
+        inputs = keras.Input(shape=(n_steps,input_dim ))
+
+        #encoded = layers.LSTM(700,kernel_initializer='he_uniform',return_sequences=True,activation='relu')(inputs)
+        #encoded = layers.Dense(input_dim, activation='relu')(inputs)
+
+        encoded = layers.LSTM(1000,return_sequences=True,)(inputs)
+        #encoded = layers.LSTM(1500, return_sequences=True, )(encoded)
+        #encoded = layers.LSTM(900, return_sequences=True, )(encoded)
+
+
+        encoded = TimeDistributed(layers.Dense(latent_dim,  ))(encoded)
+            #TimeDistributed(layers.Dense(latent_dim, ))(encoded)
+            #layers.LSTM(latent_dim, return_sequences=True )(encoded)#
+            #
+
+        #encoded = layers.Dense(latent_dim, activation='relu')(encoded)
+
+        #encoded = layers.RepeatVector(features)(encoded)
+
+        latent_inputs = keras.Input(shape=( n_steps,latent_dim,))
+
+
+        decoded = layers.LSTM(1000, return_sequences=True,name='dec2',)(latent_inputs)
+        #decoded = layers.LSTM(1500, return_sequences=True, name='dec3',)(decoded)
+        #decoded = layers.LSTM(700, return_sequences=True, name='dec3')(decoded)
+        #decoded = layers.LSTM(900, return_sequences=True, name='dec4')(decoded)
+        #decoded = layers.LSTM(700, kernel_initializer='he_uniform', activation='relu', return_sequences=True, name='dec3')(decoded)
+        decoded = TimeDistributed(layers.Dense(input_dim, ))(decoded)
+        #decoded = layers.Dense(input_dim, activation="relu", )(decoded)
+
+        #sequence_autoencoder = keras.Model(inputs, decoded)
+        encoder = keras.Model(inputs, encoded)
+        decoder = keras.Model(latent_inputs, decoded, name="decoder")
 
-def windwowIdentificationModelGEN():
-    timesteps = 1 # Length of your sequences
-    input_dim = 2000
-    latent_dim = 2000
-    features = 7
-    output_dim = 2000
-    inputs = keras.Input(shape=(n_steps,input_dim ))
+        return  encoder , decoder
 
-    #encoded = layers.LSTM(700,kernel_initializer='he_uniform',return_sequences=True,activation='relu')(inputs)
-    #encoded = layers.Dense(input_dim, activation='relu')(inputs)
+    def lstmAUTO(self, ):
 
-    encoded = layers.LSTM(1000,return_sequences=True,)(inputs)
-    #encoded = layers.LSTM(1500, return_sequences=True, )(encoded)
-    #encoded = layers.LSTM(900, return_sequences=True, )(encoded)
+        timesteps = 1000
+        input_dim = 7
+        latent_dim = 1000
 
+        inputs = keras.Input(shape=( 1000,input_dim))
+        encoded = layers.LSTM(500, return_sequences=True)(inputs)
+        encoded = layers.LSTM(1000, return_sequences=True)(encoded)
 
-    encoded = TimeDistributed(layers.Dense(latent_dim,  ))(encoded)
-        #TimeDistributed(layers.Dense(latent_dim, ))(encoded)
-        #layers.LSTM(latent_dim, return_sequences=True )(encoded)#
-        #
+        #decoded = layers.RepeatVector(input_dim)(encoded)
 
-    #encoded = layers.Dense(latent_dim, activation='relu')(encoded)
+        decoded = layers.LSTM(500, return_sequences=True)(encoded)
+        decoded = layers.LSTM(input_dim, return_sequences=True)(decoded)
 
-    #encoded = layers.RepeatVector(features)(encoded)
+        sequence_autoencoder = keras.Model(inputs, decoded)
+        encoder = keras.Model(inputs, encoded)
+        #decoder = keras.Model(latent_inputs, decoded, name="decoder")
+        return sequence_autoencoder , encoder
 
-    latent_inputs = keras.Input(shape=( n_steps,latent_dim,))
+    def windwowIdentificationModel(self, ):
+        timesteps = n_steps # Length of your sequences
+        input_dim = lenS - n_steps
+        latent_dim = lenS - n_steps
+        features = 7
+        output_dim = lenS
+        #inputs = keras.Input(shape=(features, input_dim))
+        inputs = keras.Input(shape=(features, timesteps))#(7,20)
+
+        # keras.layers.Bidirectional(
+        encoded = (layers.LSTM(n_steps - int(n_steps/2), return_sequences=True, activation='relu'))(inputs)
 
+        encoded =  layers.LSTM(timesteps, return_sequences=True, activation='relu')(encoded)
+        #encoded = TimeDistributed(layers.Dense(latent_dim, ))(encoded)
+        # TimeDistributed(layers.Dense(latent_dim, ))(encoded)
+        # layers.LSTM(latent_dim, return_sequences=True )(encoded)#
+        latent_inputs = keras.Input(shape=( features, timesteps))
+        # decoded = layers.LSTM(1000, return_sequences=True, name='dec2', activation='tanh')(latent_inputs)
 
-    decoded = layers.LSTM(1000, return_sequences=True,name='dec2',)(latent_inputs)
-    #decoded = layers.LSTM(1500, return_sequences=True, name='dec3',)(decoded)
-    #decoded = layers.LSTM(700, return_sequences=True, name='dec3')(decoded)
-    #decoded = layers.LSTM(900, return_sequences=True, name='dec4')(decoded)
-    #decoded = layers.LSTM(700, kernel_initializer='he_uniform', activation='relu', return_sequences=True, name='dec3')(decoded)
-    decoded = TimeDistributed(layers.Dense(input_dim, ))(decoded)
-    #decoded = layers.Dense(input_dim, activation="relu", )(decoded)
+        decoded =  (layers.LSTM(n_steps - int(n_steps/2),  name='dec4', return_sequences=True, activation='relu'))(latent_inputs)
 
-    #sequence_autoencoder = keras.Model(inputs, decoded)
-    encoder = keras.Model(inputs, encoded)
-    decoder = keras.Model(latent_inputs, decoded, name="decoder")
+        decoded =  layers.LSTM(timesteps, return_sequences=True, activation='relu')(decoded)
+        # decoded = layers.Dense(input_dim, activation="relu", )(decoded)
 
-    return  encoder , decoder
+        #sequence_autoencoder = keras.Model(inputs, decoded)
+        encoder = keras.Model(inputs, encoded)
+        decoder = keras.Model(latent_inputs, decoded, name="decoder")
 
-def lstmAUTO():
+        #print(encoder.summary())
+        #print(decoder.summary())
+        return  encoder , decoder
 
-    timesteps = 1000
-    input_dim = 7
-    latent_dim = 1000
+    def baselineModel(self, newDimension=None):
+        #latent_dim = 100 if newDimension==None else newDimension
+        latent_dim = 7
+        features = 7
+        input_dim = 1000 if newDimension==None else newDimension
 
-    inputs = keras.Input(shape=( 1000,input_dim))
-    encoded = layers.LSTM(500, return_sequences=True)(inputs)
-    encoded = layers.LSTM(1000, return_sequences=True)(encoded)
+        encoder_inputs = keras.Input(shape=(n_steps,features ))
 
-    #decoded = layers.RepeatVector(input_dim)(encoded)
+        encoded = layers.LSTM(500, activation='relu',return_sequences=True, name='lstmENC1')(encoder_inputs)
+        #encoded = layers.LSTM(300, activation='relu', return_sequences=True, name='lstmENC2')(encoded)
+        encoded = layers.LSTM(latent_dim, activation='relu',name='lstmENC')(encoded)
+        encoded = RepeatVector(n_steps)(encoded)
 
-    decoded = layers.LSTM(500, return_sequences=True)(encoded)
-    decoded = layers.LSTM(input_dim, return_sequences=True)(decoded)
+        encoder = keras.Model(encoder_inputs, encoded , name="encoder")
 
-    sequence_autoencoder = keras.Model(inputs, decoded)
-    encoder = keras.Model(inputs, encoded)
-    #decoder = keras.Model(latent_inputs, decoded, name="decoder")
-    return sequence_autoencoder , encoder
 
-def windwowIdentificationModel():
-    timesteps = n_steps # Length of your sequences
-    input_dim = lenS - n_steps
-    latent_dim = lenS - n_steps
-    features = 7
-    output_dim = lenS
-    #inputs = keras.Input(shape=(features, input_dim))
-    inputs = keras.Input(shape=(features, timesteps))#(7,20)
+        latent_inputs = keras.Input(shape=(n_steps,latent_dim))
 
-    # keras.layers.Bidirectional(
-    encoded = (layers.LSTM(n_steps - int(n_steps/2), return_sequences=True, activation='tanh'))(inputs)
 
-    encoded =  layers.LSTM(timesteps, return_sequences=True, activation='tanh')(encoded)
-    #encoded = TimeDistributed(layers.Dense(latent_dim, ))(encoded)
-    # TimeDistributed(layers.Dense(latent_dim, ))(encoded)
-    # layers.LSTM(latent_dim, return_sequences=True )(encoded)#
-    latent_inputs = keras.Input(shape=( features, timesteps))
-    # decoded = layers.LSTM(1000, return_sequences=True, name='dec2', activation='tanh')(latent_inputs)
+        decoded = layers.LSTM(latent_dim, activation='relu',return_sequences=True, name='lstmDEC')(latent_inputs)
+        #decoded = layers.LSTM(300, activation='relu', return_sequences=True, name='lstmDEC1')(decoded)
+        decoded = layers.LSTM(500, activation='relu', return_sequences=True, name='lstmDEC2')(decoded)
+        #decoded = layers.LSTM(500, activation='relu',  kernel_initializer='he_uniform',return_sequences=True, name='lstmDEC1')(decoded)
 
-    decoded =  (layers.LSTM(n_steps - int(n_steps/2),  name='dec4', return_sequences=True, activation='tanh'))(latent_inputs)
 
-    decoded =  layers.LSTM(timesteps, return_sequences=True, activation='tanh')(decoded)
-    # decoded = layers.Dense(input_dim, activation="relu", )(decoded)
+        decoded = TimeDistributed(layers.Dense(features, activation="relu", ))(decoded)
 
-    #sequence_autoencoder = keras.Model(inputs, decoded)
-    encoder = keras.Model(inputs, encoded)
-    decoder = keras.Model(latent_inputs, decoded, name="decoder")
+        decoder = keras.Model(latent_inputs, decoded, name="decoder")
 
-    #print(encoder.summary())
-    #print(decoder.summary())
-    return  encoder , decoder
+        return encoder, decoder
 
-def baselineModel(newDimension=None):
-    #latent_dim = 100 if newDimension==None else newDimension
-    latent_dim = 7
-    features = 7
-    input_dim = 1000 if newDimension==None else newDimension
+    def VAE_getMemoryWindowBetweenTaskA_TaskB(self, ):
 
-    encoder_inputs = keras.Input(shape=(n_steps,features ))
+        seqLSTMBtr = seqLSTMB.transpose()#.reshape(n_steps,9,1000)
+        seqLSTMAtr = seqLSTMA.transpose()#.reshape(n_steps,9,1000)
 
-    encoded = layers.LSTM(500, activation='relu',return_sequences=True, name='lstmENC1')(encoder_inputs)
-    #encoded = layers.LSTM(300, activation='relu', return_sequences=True, name='lstmENC2')(encoded)
-    encoded = layers.LSTM(latent_dim, activation='relu',name='lstmENC')(encoded)
-    encoded = RepeatVector(n_steps)(encoded)
+        encoder , decoder  = VAE_windwowIdentificationModel()
+        windAE = VAE(encoder, decoder)
+        windAE.compile(optimizer=keras.optimizers.Adam())
 
-    encoder = keras.Model(encoder_inputs, encoded , name="encoder")
 
+        windAE.fit(seqLSTMAtr,seqLSTMBtr,epochs=200,)
 
-    latent_inputs = keras.Input(shape=(n_steps,latent_dim))
+        #windAE_.fit(seqLSTMAtr,seqLSTMAtr,epochs=100,)
 
+        #windEncoder = windAE.layers[:-2]
+        encodedTimeSeries = np.round(windAE.encoder.predict(seqLSTMAtr),2)
+        encodedTimeSeriesReshaped = encodedTimeSeries.reshape(1000,9)
 
-    decoded = layers.LSTM(latent_dim, activation='relu',return_sequences=True, name='lstmDEC')(latent_inputs)
-    #decoded = layers.LSTM(300, activation='relu', return_sequences=True, name='lstmDEC1')(decoded)
-    decoded = layers.LSTM(500, activation='relu', return_sequences=True, name='lstmDEC2')(decoded)
-    #decoded = layers.LSTM(500, activation='relu',  kernel_initializer='he_uniform',return_sequences=True, name='lstmDEC1')(decoded)
+        selectiveMemory_ExtractedOfTaskA = seqLSTMA[[k for k in range(0,1000) if encodedTimeSeriesReshaped[:,k].all()>0]]
 
+        return selectiveMemory_ExtractedOfTaskA
 
-    decoded = TimeDistributed(layers.Dense(features, activation="relu", ))(decoded)
+    def getMemoryWindowBetweenTaskA_TaskB(self, lenSeq, seqLSTMA, seqLSTMB):
 
-    decoder = keras.Model(latent_inputs, decoded, name="decoder")
+        '''scale seqlLSTMA given the task of incremental training
+        of a base learner from taskA=>taskB in a way that the accuracy
+        of BL evaluated on both tasks when incorporating the scaled info
+        is better when evaluated wihout it'''
 
-    return encoder, decoder
+        ######################################################################
+        min_max_scalerA = MinMaxScaler()
+        seqAScaled = []
+        for i in range(0, len(seqLSTMA)):
+            seqScaled = min_max_scalerA.fit_transform(seqLSTMA[i])
+            #seqScaled = seqLSTMA[i]
+            seqScaled = seqScaled.transpose()
+            seqAScaled.append(seqScaled)
 
-def VAE_getMemoryWindowBetweenTaskA_TaskB():
+        X_train_normA = np.array(seqAScaled)
 
-    seqLSTMBtr = seqLSTMB.transpose()#.reshape(n_steps,9,1000)
-    seqLSTMAtr = seqLSTMA.transpose()#.reshape(n_steps,9,1000)
+        min_max_scalerB = MinMaxScaler()
+        seqBScaled = []
+        for i in range(0, len(seqLSTMB)):
+            seqScaled = min_max_scalerB.fit_transform(seqLSTMB[i])
+            #seqScaled = seqLSTMB[i]
+            seqScaled = seqScaled.transpose()
+            seqBScaled.append(seqScaled)
 
-    encoder , decoder  = VAE_windwowIdentificationModel()
-    windAE = VAE(encoder, decoder)
-    windAE.compile(optimizer=keras.optimizers.Adam())
+        X_train_normB = np.array(seqBScaled)
 
+        seqA, seqB = X_train_normA, X_train_normB
 
-    windAE.fit(seqLSTMAtr,seqLSTMBtr,epochs=200,)
+        es = keras.callbacks.EarlyStopping(monitor='loss', restore_best_weights=True, mode='min')
 
-    #windAE_.fit(seqLSTMAtr,seqLSTMAtr,epochs=100,)
+        self.windAEa.fit(seqA, seqB, epochs=30, )#batch_size=20
 
-    #windEncoder = windAE.layers[:-2]
-    encodedTimeSeries = np.round(windAE.encoder.predict(seqLSTMAtr),2)
-    encodedTimeSeriesReshaped = encodedTimeSeries.reshape(1000,9)
 
-    selectiveMemory_ExtractedOfTaskA = seqLSTMA[[k for k in range(0,1000) if encodedTimeSeriesReshaped[:,k].all()>0]]
+        encodedTimeSeriesA = np.round(self.windAEa.encoder.predict(seqA), 2)
 
-    return selectiveMemory_ExtractedOfTaskA
 
-def getMemoryWindowBetweenTaskA_TaskB(lenSeq,seqLSTMA, seqLSTMB):
+        batches = []
+        for i in range(0,len(encodedTimeSeriesA)):
+            #batch = min_max_scalerA.inverse_transform((seqA[i] + (seqA[i] * encodedTimeSeriesA[i])).transpose())
+            #batches.append(batch)
+            seq_a = seqLSTMA[i]#.transpose()
+            seq_a = min_max_scalerA.inverse_transform(seqA[i].transpose())
+            weight = encodedTimeSeriesA[i].transpose()
+            #weight = np.random.random((20, 7))
+            batch = (seq_a + (weight))
+            batches.append(batch)
 
-    '''seqLSTMAB = np.append(seqLSTMA,seqLSTMB, axis=0)
+        selectiveMemory_ExtractedOfTaskA = np.array(batches)
 
-    seqLSTMABtr = seqLSTMAB.transpose()#.reshape(7,n_steps,2000)
-    min_max_scalerAB =  MinMaxScaler()
 
-    seqLSTMBtr = seqLSTMB.transpose()#.reshape(n_steps,9,1000)
-    seqLSTMAtr = seqLSTMA.transpose()#.reshape(n_steps,9,1000)
+        return selectiveMemory_ExtractedOfTaskA, None
 
-
-    min_max_scalerB = MinMaxScaler()
-    min_max_scalerA  = MinMaxScaler()
-    X_train_normB = min_max_scalerB.fit_transform(seqLSTMBtr)
-    X_train_normA = min_max_scalerA.fit_transform(seqLSTMAtr)
-
-    seqA = X_train_normA.reshape( n_steps,7 , lenSeq)
-    seqB = X_train_normB.reshape( n_steps,7 , lenSeq)'''
-
-
-    ######################################################################
-    min_max_scalerA = MinMaxScaler()
-    seqAScaled = []
-    for i in range(0, len(seqLSTMA)):
-        seqScaled = min_max_scalerA.fit_transform(seqLSTMA[i])
-        #seqScaled = seqLSTMA[i]
-        seqScaled = seqScaled.transpose()
-        seqAScaled.append(seqScaled)
-
-    X_train_normA = np.array(seqAScaled)
-    # X_train_normA = min_max_scaler.fit_transform(seqLSTMA)
-    # X_train_normB = min_max_scaler.fit_transform(seqLSTMB)
-    min_max_scalerB = MinMaxScaler()
-    seqBScaled = []
-    for i in range(0, len(seqLSTMB)):
-        seqScaled = min_max_scalerB.fit_transform(seqLSTMB[i])
-        #seqScaled = seqLSTMB[i]
-        seqScaled = seqScaled.transpose()
-        seqBScaled.append(seqScaled)
-
-    X_train_normB = np.array(seqBScaled)
-    #seqA, seqB =  X_train_normA.reshape( n_steps,7 , lenSeq-n_steps), X_train_normB.reshape( n_steps,7 , lenSeq-n_steps)
-    seqA, seqB = X_train_normA, X_train_normB
-    #seqAE , enc = lstmAUTO()
-    #seqAE.compile(optimizer=keras.optimizers.Adam(),loss='mse')
-    #seqAE.fit(seqA,seqB)
-
-    encoderA , decoderA  = windwowIdentificationModel()
-    windAEa = LSTM_AE_IW(encoderA, decoderA)
-    windAEa.compile(optimizer=keras.optimizers.Adam())
-
-    es = keras.callbacks.EarlyStopping(monitor='loss',restore_best_weights=True, mode='min')
-
-    windAEa.fit(seqA, seqB , epochs=30,)#batch_size=20
-
-    '''encoderB, decoderB = windwowIdentificationModel()
-    windAEb = LSTM_AE_IW(encoderB, decoderB)
-    windAEb.compile(optimizer=keras.optimizers.Adam())
-
-    windAEb.fit(seqB, seqA, epochs=30, )'''
-
-    '''encoderB, decoderB = windwowIdentificationModel()
-    windAEb = LSTM_AE_IW(encoderB, decoderB)
-    windAEb.compile(optimizer=keras.optimizers.Adam())
-
-    windAEb.fit(seqB, seqA, epochs=50, )'''
-    ##########################################
-
-    '''encoderB , decoderB  = windwowIdentificationModel()
-    #encoderA.compile(optimizer=keras.optimizers.Adam(),loss='mse')
-    #encoderA.fit(seqA, seqA,epochs=30)
-    windAEb = LSTM_AE_IW(encoderB, decoderB)
-    windAEb.compile(optimizer=keras.optimizers.Adam())
-
-    es = keras.callbacks.EarlyStopping(monitor='loss',restore_best_weights=True, mode='min')
-    windAEb.fit(seqB,seqA,epochs=30, )'''
-
-    encodedTimeSeriesA = np.round(windAEa.encoder.predict(seqA),2)
-
-    #encodedTimeSeriesB = np.round(windAEb.encoder.predict(seqB), 2)
-
-
-
-    arr = encodedTimeSeriesA[0] > 0
-    #indicesOfA = [k for k in range(0, lenSeq) if arr[:, k].all() == True]
-
-    #selectiveMemory_ExtractedOfTaskA =  seqLSTMA[indicesOfA]
-    batches = []
-    for i in range(0,len(encodedTimeSeriesA)):
-        #batch = min_max_scalerA.inverse_transform((seqA[i] + (seqA[i] * encodedTimeSeriesA[i])).transpose())
-        #batches.append(batch)
-
-        seq_a = min_max_scalerA.inverse_transform(seqA[i].transpose())
-        batch = (seq_a + (seq_a * encodedTimeSeriesA[i].transpose()))
-        batches.append(batch)
-
-    selectiveMemory_ExtractedOfTaskA = np.array(batches)
-
-    '''batches = []
-    for i in range(0, len(encodedTimeSeriesB)):
-
-        seq_b = min_max_scalerB.inverse_transform(seqB[i].transpose())
-        batch = (seq_b + (seq_b * encodedTimeSeriesB[i].transpose()))
-        batches.append(batch)'''
-
-    selectiveMemory_ExtractedOfTaskB = np.array(batches)
-
-    #scaledArr_A = seqLSTMA.transpose() + (seqLSTMA.transpose() * encodedTimeSeriesA[0])
-
-
-    #plt.plot(np.linspace(0, 5000, 5000), seqLSTMA[:, 3], color='red')
-    #plt.plot(decodedA[:,3])
-    #plt.plot(np.linspace(5000, 10000, 5000), seqLSTMB[:, 3], color='blue')
-    #plt.plot(indicesOfA, selectiveMemory_ExtractedOfTaskA[:,3], color='green')
-    #plt.show()
-
-    '''with open('./AE_files/selectiveMemory_ExtractedOfTaskA.csv', mode='w') as data:
-        data_writer = csv.writer(data, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
-        for i in range(0, len(selectiveMemory_ExtractedOfTaskA)):
-            data_writer.writerow(
-                [selectiveMemory_ExtractedOfTaskA[i][0], selectiveMemory_ExtractedOfTaskA[i][1],
-                 selectiveMemory_ExtractedOfTaskA[i][2],selectiveMemory_ExtractedOfTaskA[i][3],
-                 selectiveMemory_ExtractedOfTaskA[i][4],
-                 selectiveMemory_ExtractedOfTaskA[i][5],
-                 selectiveMemory_ExtractedOfTaskA[i][6],
-                 ])'''
-    #scaledArr_A = seqLSTMA.transpose() + (seqLSTMA.transpose() * encodedTimeSeriesA[0])
-    #scaledArr_A = np.array(scaledArr_A).transpose()
-
-    #scaledArr_B = seqLSTMB.transpose() + (seqLSTMB.transpose() * encodedTimeSeriesB[0])
-    rndIndices = []
-    rndLen = random.randint(300,900)
-    for k in range(0,rndLen):
-        rndIndices.append(random.randint(0, lenSeq-1))
-    #selectiveMemory_ExtractedOfTaskA = seqLSTMA[rndIndices]
-    #scaledArr_B = np.array(scaledArr_B).transpose()
-    return selectiveMemory_ExtractedOfTaskA, None
-        #np.append(scaledArr_A,scaledArr_B, axis=0)
-    #np.append(scaledArr_A,scaledArr_B, axis=0)
-        #np.append(selectiveMemory_ExtractedOfTaskA,selectiveMemory_ExtractedOfTaskB,axis=0)
-
-def trainAE():
-    encoder, decoder = baselineModel()
-    lstm_autoencoderInit = LSTM_AE(encoder,decoder,  )
-    lstm_autoencoderInit.compile(optimizer=keras.optimizers.Adam())
-
-
-    for task in tasks:
-
-        lstm_autoencoderInit.fit(task,task, epochs=100 )
-
-    X_train_normB = min_max_scaler.fit_transform(seqLSTMB)
-    x_test_encoded = lstm_autoencoderInit.encoder.predict(X_train_normB.reshape(1000,n_steps,9))
-    decSeqInit = lstm_autoencoderInit.decoder.predict(x_test_encoded)
-    decSeqInit =  decSeqInit.reshape(1000,7)
-    decSeqInit  = min_max_scaler.inverse_transform(decSeqInit)
-    scoreAE = np.linalg.norm(seqLSTMB.reshape(1000,7)-decSeqInit,axis=0)
-        #
-    print("AE Score :  " + str(scoreAE))
-
-    with open('./AE_files/decodedSeaquenceofNewTaskWithoutMemory.csv', mode='w') as data:
-        data_writer = csv.writer(data, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
-        for i in range(0, len(decSeqInit)):
-            data_writer.writerow(
-                [decSeqInit[i][0], decSeqInit[i][1], decSeqInit[i][2], decSeqInit[i][3],
-                 decSeqInit[i][4],
-                 decSeqInit[i][5], decSeqInit[i][6], decSeqInit[i][7], decSeqInit[i][8]
-                 ])
-    return scoreAE
-
-def trainAE_withMemoryOfPrevTask_inLS(selectiveMemoryExtractedOfTaskA):
-
-    decSeqWithDiffWindow = []
-    mem = selectiveMemoryExtractedOfTaskA.shape[1]
-    #addMemoryToNewTask = np.append(selectiveMemoryExtractedOfTaskA, seqLSTMB, axis=0)
-
-    #newDimension = len(addMemoryToNewTask)
-
-    min_max_scaler = MinMaxScaler()
-    #X_train_norm = min_max_scaler.fit_transform(addMemoryToNewTask)
-    X_train_normB = min_max_scaler.fit_transform(seqLSTMB)
-
-    X_train_normB = X_train_normB.reshape(len(X_train_normB),n_steps,9)
-
-    #addMemoryToNewTask = X_train_norm.reshape(len(X_train_norm),n_steps,9)
-
-    encoder, decoder = baselineModel(mem)
-    lstm_autoencoderMem = LSTM_AE(encoder, decoder,)
-    lstm_autoencoderMem.compile(optimizer=keras.optimizers.Adam())
-    lstm_autoencoderMem.fit(X_train_normB, X_train_normB, epochs=10)
-
-
-    X_train_normB = X_train_normB.reshape(1000, n_steps, 7)
-
-    x_test_encoded = lstm_autoencoderMem.encoder.predict(X_train_normB)
-
-    newEncodedLatentSpace = np.append(x_test_encoded,selectiveMemoryExtractedOfTaskA.reshape(mem, 1,9), axis=0)
-
-    decSeqMem = lstm_autoencoderMem.decoder.predict(newEncodedLatentSpace)
-    #decSeqMem = decSeqMem.reshape(1000,9)
-    decSeqMem = decSeqMem.reshape(len(decSeqMem), 7)
-    decSeqMem = min_max_scaler.inverse_transform(decSeqMem)
-
-    decSeqWithDiffWindow.append(decSeqMem)
-        # score , acc = lstm_autoencoder.evaluate(tasks[i], tasks[i], epochs=10)
-    #diff = newDimension - 1000
-    decSeq = decSeqMem.reshape(len(decSeqMem),9)#[diff:,:]
-
-
-    with open('./AE_files/decodedSequenceofNewTaskWithMemory.csv', mode='w') as data:
-        data_writer = csv.writer(data, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
-        for i in range(0, len(decSeq)):
-            data_writer.writerow(
-                [decSeq[i][0], decSeq[i][1], decSeq[i][2], decSeq[i][3],
-                 decSeq[i][4],
-                 decSeq[i][5], decSeq[i][6], decSeq[i][7], decSeq[i][8]
-                 ])
-
-    scoreAE_mem = np.linalg.norm(seqLSTMB.reshape(1000,9) - decSeq[:-mem],axis=0)
-        #scipy.stats.entropy(seqLSTMB.reshape(1000,9) ,qk=decSeq)
-        #
-    print("AE Score with mem window: " + str(len(selectiveMemoryExtractedOfTaskA)) + "  " + str(scoreAE_mem))
-    return scoreAE_mem
-
-def trainAE_withMemoryOfPrevTask(selectiveMemoryExtractedOfTaskA):
-    decSeqWithDiffWindow = []
-    addMemoryToNewTask = np.append(selectiveMemoryExtractedOfTaskA, seqLSTMB, axis=0)
-
-    newDimension = len(addMemoryToNewTask)
-
-    min_max_scaler = MinMaxScaler()
-    X_train_norm = min_max_scaler.fit_transform(addMemoryToNewTask)
-    X_train_normB = min_max_scaler.fit_transform(seqLSTMB)
-
-    addMemoryToNewTask = X_train_norm.reshape(len(X_train_norm),n_steps,9)
-
-
-
-    encoder, decoder = baselineModel(newDimension)
-    lstm_autoencoderMem = LSTM_AE(encoder, decoder,)
-    lstm_autoencoderMem.compile(optimizer=keras.optimizers.Adam())
-    lstm_autoencoderMem.fit(addMemoryToNewTask, addMemoryToNewTask, epochs=100)
-
-    x_test_encoded = lstm_autoencoderMem.encoder.predict(X_train_normB.reshape(1000,n_steps,9))
-    decSeqMem = lstm_autoencoderMem.decoder.predict(x_test_encoded)
-    decSeqMem = decSeqMem.reshape(1000,9)
-    decSeqMem = min_max_scaler.inverse_transform(decSeqMem)
-
-    decSeqWithDiffWindow.append(decSeqMem)
-        # score , acc = lstm_autoencoder.evaluate(tasks[i], tasks[i], epochs=10)
-    diff = newDimension - 1000
-    decSeq = decSeqMem.reshape(1000,9)#[diff:,:]
-
-
-    with open('./AE_files/decodedSequenceofNewTaskWithMemory.csv', mode='w') as data:
-        data_writer = csv.writer(data, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
-        for i in range(0, len(decSeq)):
-            data_writer.writerow(
-                [decSeq[i][0], decSeq[i][1], decSeq[i][2], decSeq[i][3],
-                 decSeq[i][4],
-                 decSeq[i][5], decSeq[i][6], decSeq[i][7], decSeq[i][8]
-                 ])
-
-    scoreAE_mem = np.linalg.norm(seqLSTMB.reshape(1000,9) - decSeq,axis=0)
-        #scipy.stats.entropy(seqLSTMB.reshape(1000,9) ,qk=decSeq)
-        #
-    print("AE Score with mem window: " + str(diff) + "  " + str(scoreAE_mem))
-    return scoreAE_mem
-#####################
-def plotDistributions(seqA,seqB ,var):
-
-    dfA = pd.DataFrame({'stwA':seqA[:,3]})
-    dfB = pd.DataFrame({'stwB': seqB[:, 3]})
-
-    sns.displot(dfA, x='stwA')
-    sns.displot(dfB, x='stwB')
-
-    plt.show()
-
-def trainAE_withRollingWIndowOfPrevTask(seqLSTMA, seqLSTMB):
-    memWindow = [5, 10, 15, 20]
-
-    memoryEncoderLayers = []
-    mem = 0
-    decSeqWithDiffWindow = []
-
-    for mem in memWindow:
-
+    def trainAE(self, ):
         encoder, decoder = baselineModel()
+        lstm_autoencoderInit = LSTM_AE(encoder,decoder,  )
+        lstm_autoencoderInit.compile(optimizer=keras.optimizers.Adam())
+
+
+        for task in tasks:
+
+            lstm_autoencoderInit.fit(task,task, epochs=100 )
+
+        X_train_normB = min_max_scaler.fit_transform(seqLSTMB)
+        x_test_encoded = lstm_autoencoderInit.encoder.predict(X_train_normB.reshape(1000,n_steps,9))
+        decSeqInit = lstm_autoencoderInit.decoder.predict(x_test_encoded)
+        decSeqInit =  decSeqInit.reshape(1000,7)
+        decSeqInit  = min_max_scaler.inverse_transform(decSeqInit)
+        scoreAE = np.linalg.norm(seqLSTMB.reshape(1000,7)-decSeqInit,axis=0)
+            #
+        print("AE Score :  " + str(scoreAE))
+
+        with open('./AE_files/decodedSeaquenceofNewTaskWithoutMemory.csv', mode='w') as data:
+            data_writer = csv.writer(data, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
+            for i in range(0, len(decSeqInit)):
+                data_writer.writerow(
+                    [decSeqInit[i][0], decSeqInit[i][1], decSeqInit[i][2], decSeqInit[i][3],
+                     decSeqInit[i][4],
+                     decSeqInit[i][5], decSeqInit[i][6], decSeqInit[i][7], decSeqInit[i][8]
+                     ])
+        return scoreAE
+
+    def trainAE_withMemoryOfPrevTask_inLS(self, selectiveMemoryExtractedOfTaskA):
+
+        decSeqWithDiffWindow = []
+        mem = selectiveMemoryExtractedOfTaskA.shape[1]
+        #addMemoryToNewTask = np.append(selectiveMemoryExtractedOfTaskA, seqLSTMB, axis=0)
+
+        #newDimension = len(addMemoryToNewTask)
+
+        min_max_scaler = MinMaxScaler()
+        #X_train_norm = min_max_scaler.fit_transform(addMemoryToNewTask)
+        X_train_normB = min_max_scaler.fit_transform(seqLSTMB)
+
+        X_train_normB = X_train_normB.reshape(len(X_train_normB),n_steps,9)
+
+        #addMemoryToNewTask = X_train_norm.reshape(len(X_train_norm),n_steps,9)
+
+        encoder, decoder = baselineModel(mem)
         lstm_autoencoderMem = LSTM_AE(encoder, decoder,)
         lstm_autoencoderMem.compile(optimizer=keras.optimizers.Adam())
+        lstm_autoencoderMem.fit(X_train_normB, X_train_normB, epochs=10)
 
-        memoryOfPrevTask = seqLSTMA[-mem:]
-        addMemoryToNewTask = np.append(memoryOfPrevTask, seqLSTMB, axis=0)
 
-        lstm_autoencoderMem.fit(addMemoryToNewTask, addMemoryToNewTask, epochs=30)
+        X_train_normB = X_train_normB.reshape(1000, n_steps, 7)
 
-        x_test_encoded = lstm_autoencoderMem.encoder.predict(seqLSTMB)
-        decSeqMem = lstm_autoencoderMem.decoder.predict(x_test_encoded)
+        x_test_encoded = lstm_autoencoderMem.encoder.predict(X_train_normB)
+
+        newEncodedLatentSpace = np.append(x_test_encoded,selectiveMemoryExtractedOfTaskA.reshape(mem, 1,9), axis=0)
+
+        decSeqMem = lstm_autoencoderMem.decoder.predict(newEncodedLatentSpace)
+        #decSeqMem = decSeqMem.reshape(1000,9)
+        decSeqMem = decSeqMem.reshape(len(decSeqMem), 7)
+        decSeqMem = min_max_scaler.inverse_transform(decSeqMem)
 
         decSeqWithDiffWindow.append(decSeqMem)
-        # score , acc = lstm_autoencoder.evaluate(tasks[i], tasks[i], epochs=10)
+            # score , acc = lstm_autoencoder.evaluate(tasks[i], tasks[i], epochs=10)
+        #diff = newDimension - 1000
+        decSeq = decSeqMem.reshape(len(decSeqMem),9)#[diff:,:]
 
-        scoreAE_mem = np.linalg.norm(seqLSTMB - decSeqMem)
-        print("AE Score with mem window: " + str(mem) + "  " + str(scoreAE_mem))
 
-        #lstm_autoencoder.fit(tasks[i], tasks[i], epochs=10)
+        with open('./AE_files/decodedSequenceofNewTaskWithMemory.csv', mode='w') as data:
+            data_writer = csv.writer(data, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
+            for i in range(0, len(decSeq)):
+                data_writer.writerow(
+                    [decSeq[i][0], decSeq[i][1], decSeq[i][2], decSeq[i][3],
+                     decSeq[i][4],
+                     decSeq[i][5], decSeq[i][6], decSeq[i][7], decSeq[i][8]
+                     ])
 
-    seqLSTMB = seqLSTMB.reshape(seqLSTMB.shape[0],9)
-    stwOr = seqLSTMB[:,3]
+        scoreAE_mem = np.linalg.norm(seqLSTMB.reshape(1000,9) - decSeq[:-mem],axis=0)
+            #scipy.stats.entropy(seqLSTMB.reshape(1000,9) ,qk=decSeq)
+            #
+        print("AE Score with mem window: " + str(len(selectiveMemoryExtractedOfTaskA)) + "  " + str(scoreAE_mem))
+        return scoreAE_mem
 
-    stwDec = decSeqInit
-    stwDec = stwDec.reshape(stwDec.shape[0],9)
-    stwDec = stwDec[:,3]
+    def trainAE_withMemoryOfPrevTask(self, selectiveMemoryExtractedOfTaskA):
+        decSeqWithDiffWindow = []
+        addMemoryToNewTask = np.append(selectiveMemoryExtractedOfTaskA, seqLSTMB, axis=0)
 
-    #dfStwOr = pd.DataFrame({"time":np.linspace(0,len(stwOr),len(stwOr)),"stwOr":stwOr})
-    '''stwDec5 = decSeqWithDiffWindow[0]
-    stwDec5 = stwDec5.reshape(1000,9)
-    stwDec5 =stwDec5[:,3]
-    
-    stwDec10 = decSeqWithDiffWindow[1]
-    stwDec10 = stwDec10.reshape(1000,9)
-    stwDec10 =stwDec10[:,3]
-    
-    
-    stwDec15 = decSeqWithDiffWindow[2]
-    stwDec15 = stwDec15.reshape(1000,9)
-    stwDec15 =stwDec15[:,3]
-    
-    
-    stwDec20 = decSeqWithDiffWindow[3]
-    stwDec20 = stwDec20.reshape(1000,9)
-    stwDec20 = stwDec20[:,3]
-    
-    stwDec25 = decSeqWithDiffWindow[4]
-    stwDec25 = stwDec25.reshape(1000,9)
-    stwDec25 = stwDec25[:,3]'''
+        newDimension = len(addMemoryToNewTask)
 
-    stwDec30 = decSeqWithDiffWindow[0]
-    stwDec30 = stwDec30.reshape(stwDec30.shape[0],9)
-    stwDec30 = stwDec30[:,3]
+        min_max_scaler = MinMaxScaler()
+        X_train_norm = min_max_scaler.fit_transform(addMemoryToNewTask)
+        X_train_normB = min_max_scaler.fit_transform(seqLSTMB)
 
-    dfStwDec = pd.DataFrame({"time":np.linspace(0,len(stwDec),len(stwDec)),"stw Original":stwOr,
-                            "stw Decoded without memory":stwDec,
-                             "stw Decoded with 30min memory of previous task":stwDec30,
-                            },)
+        addMemoryToNewTask = X_train_norm.reshape(len(X_train_norm),n_steps,9)
 
-    ''' "stw Decoded with memory 10min":stwDec10,
-                             "stw Decoded with memory 15min":stwDec15,
-                             "stw Decoded with memory 20min":stwDec20,
-                             "stw Decoded with memory 25min":stwDec25,
-                             "stw Decoded with memory 30min":stwDec30,'''
-    dfStwDec.plot(kind='kde')
-    plt.xlim(min(stwDec),max(stwDec))
-    plt.show()
 
-def plotErrBetweenTasks(seqLSTMA, seqLSTMB, lrSpeedSel , lrSpeedFull):
 
-    '''visualizeLen = 1000
-    plt.plot(np.linspace(0, visualizeLen, visualizeLen), y_hatsa[:visualizeLen], color='red',label='predicted')
-    plt.plot(np.linspace(0, visualizeLen, visualizeLen),ya[:visualizeLen],color='green',label='TASKA')
-    plt.plot(np.linspace(visualizeLen, visualizeLen*2, visualizeLen), y_hatsb[:visualizeLen], color='red')
-    plt.plot(np.linspace(visualizeLen, visualizeLen*2, visualizeLen),yb[:visualizeLen],'blue',label='TASKB')'''
-    plot='B'
-    if plot =='A':
-        i = np.min(seqLSTMA[:,3])
-        maxSpeedA = np.max(seqLSTMA[:,3])
+        encoder, decoder = baselineModel(newDimension)
+        lstm_autoencoderMem = LSTM_AE(encoder, decoder,)
+        lstm_autoencoderMem.compile(optimizer=keras.optimizers.Adam())
+        lstm_autoencoderMem.fit(addMemoryToNewTask, addMemoryToNewTask, epochs=100)
+
+        x_test_encoded = lstm_autoencoderMem.encoder.predict(X_train_normB.reshape(1000,n_steps,9))
+        decSeqMem = lstm_autoencoderMem.decoder.predict(x_test_encoded)
+        decSeqMem = decSeqMem.reshape(1000,9)
+        decSeqMem = min_max_scaler.inverse_transform(decSeqMem)
+
+        decSeqWithDiffWindow.append(decSeqMem)
+            # score , acc = lstm_autoencoder.evaluate(tasks[i], tasks[i], epochs=10)
+        diff = newDimension - 1000
+        decSeq = decSeqMem.reshape(1000,9)#[diff:,:]
+
+
+        with open('./AE_files/decodedSequenceofNewTaskWithMemory.csv', mode='w') as data:
+            data_writer = csv.writer(data, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
+            for i in range(0, len(decSeq)):
+                data_writer.writerow(
+                    [decSeq[i][0], decSeq[i][1], decSeq[i][2], decSeq[i][3],
+                     decSeq[i][4],
+                     decSeq[i][5], decSeq[i][6], decSeq[i][7], decSeq[i][8]
+                     ])
+
+        scoreAE_mem = np.linalg.norm(seqLSTMB.reshape(1000,9) - decSeq,axis=0)
+            #scipy.stats.entropy(seqLSTMB.reshape(1000,9) ,qk=decSeq)
+            #
+        print("AE Score with mem window: " + str(diff) + "  " + str(scoreAE_mem))
+        return scoreAE_mem
+    #####################
+    def plotDistributions(self, seqA,seqB ,var):
+
+        dfA = pd.DataFrame({'stwA':seqA[:,3]})
+        dfB = pd.DataFrame({'stwB': seqB[:, 3]})
+
+        sns.displot(dfA, x='stwA')
+        sns.displot(dfB, x='stwB')
+
+        plt.show()
+
+    def trainAE_withRollingWIndowOfPrevTask(self, seqLSTMA, seqLSTMB):
+        memWindow = [5, 10, 15, 20]
+
+        memoryEncoderLayers = []
+        mem = 0
+        decSeqWithDiffWindow = []
+
+        for mem in memWindow:
+
+            encoder, decoder = baselineModel()
+            lstm_autoencoderMem = LSTM_AE(encoder, decoder,)
+            lstm_autoencoderMem.compile(optimizer=keras.optimizers.Adam())
+
+            memoryOfPrevTask = seqLSTMA[-mem:]
+            addMemoryToNewTask = np.append(memoryOfPrevTask, seqLSTMB, axis=0)
+
+            lstm_autoencoderMem.fit(addMemoryToNewTask, addMemoryToNewTask, epochs=30)
+
+            x_test_encoded = lstm_autoencoderMem.encoder.predict(seqLSTMB)
+            decSeqMem = lstm_autoencoderMem.decoder.predict(x_test_encoded)
+
+            decSeqWithDiffWindow.append(decSeqMem)
+            # score , acc = lstm_autoencoder.evaluate(tasks[i], tasks[i], epochs=10)
+
+            scoreAE_mem = np.linalg.norm(seqLSTMB - decSeqMem)
+            print("AE Score with mem window: " + str(mem) + "  " + str(scoreAE_mem))
+
+            #lstm_autoencoder.fit(tasks[i], tasks[i], epochs=10)
+
+        seqLSTMB = seqLSTMB.reshape(seqLSTMB.shape[0],9)
+        stwOr = seqLSTMB[:,3]
+
+        stwDec = decSeqInit
+        stwDec = stwDec.reshape(stwDec.shape[0],9)
+        stwDec = stwDec[:,3]
+
+        #dfStwOr = pd.DataFrame({"time":np.linspace(0,len(stwOr),len(stwOr)),"stwOr":stwOr})
+        '''stwDec5 = decSeqWithDiffWindow[0]
+        stwDec5 = stwDec5.reshape(1000,9)
+        stwDec5 =stwDec5[:,3]
+        
+        stwDec10 = decSeqWithDiffWindow[1]
+        stwDec10 = stwDec10.reshape(1000,9)
+        stwDec10 =stwDec10[:,3]
+        
+        
+        stwDec15 = decSeqWithDiffWindow[2]
+        stwDec15 = stwDec15.reshape(1000,9)
+        stwDec15 =stwDec15[:,3]
+        
+        
+        stwDec20 = decSeqWithDiffWindow[3]
+        stwDec20 = stwDec20.reshape(1000,9)
+        stwDec20 = stwDec20[:,3]
+        
+        stwDec25 = decSeqWithDiffWindow[4]
+        stwDec25 = stwDec25.reshape(1000,9)
+        stwDec25 = stwDec25[:,3]'''
+
+        stwDec30 = decSeqWithDiffWindow[0]
+        stwDec30 = stwDec30.reshape(stwDec30.shape[0],9)
+        stwDec30 = stwDec30[:,3]
+
+        dfStwDec = pd.DataFrame({"time":np.linspace(0,len(stwDec),len(stwDec)),"stw Original":stwOr,
+                                "stw Decoded without memory":stwDec,
+                                 "stw Decoded with 30min memory of previous task":stwDec30,
+                                },)
+
+        ''' "stw Decoded with memory 10min":stwDec10,
+                                 "stw Decoded with memory 15min":stwDec15,
+                                 "stw Decoded with memory 20min":stwDec20,
+                                 "stw Decoded with memory 25min":stwDec25,
+                                 "stw Decoded with memory 30min":stwDec30,'''
+        dfStwDec.plot(kind='kde')
+        plt.xlim(min(stwDec),max(stwDec))
+        plt.show()
+
+    def plotErrBetweenTasks(self, seqLSTMA, seqLSTMB, lrSpeedSel , lrSpeedFull):
+
+        '''visualizeLen = 1000
+        plt.plot(np.linspace(0, visualizeLen, visualizeLen), y_hatsa[:visualizeLen], color='red',label='predicted')
+        plt.plot(np.linspace(0, visualizeLen, visualizeLen),ya[:visualizeLen],color='green',label='TASKA')
+        plt.plot(np.linspace(visualizeLen, visualizeLen*2, visualizeLen), y_hatsb[:visualizeLen], color='red')
+        plt.plot(np.linspace(visualizeLen, visualizeLen*2, visualizeLen),yb[:visualizeLen],'blue',label='TASKB')'''
+        plot='B'
+        if plot =='A':
+            i = np.min(seqLSTMA[:,3])
+            maxSpeedA = np.max(seqLSTMA[:,3])
+            focsPLot = []
+            speedsPlot = []
+            ranges = []
+            featuresPlot = []
+            while i <= maxSpeedA:
+                # workbook._sheets[sheet].insert_rows(k+27)
+                focArray = np.array([k for k in seqLSTMA if float(k[3]) >= i - 0.25 and float(k[3]) <= i + 0.25])
+                # focsApp.append(str(np.round(focArray.__len__() / focAmount * 100, 2)) + '%')
+                '''meanFoc = np.mean(focArray[:, 8])
+                stdFoc = np.std(focArray[:, 8])
+                speedFoc = np.array([k for k in focArray if k[8] >= (meanFoc - (3 * stdFoc)) and k[8] <= (meanFoc + (3 * stdFoc))])'''
+
+                if focArray.__len__() > 0:
+                    focsPLot.append(focArray.__len__())
+                    featuresPlot.append(np.mean(focArray[:,:6],axis=0))
+                    speedsPlot.append(np.mean(focArray[:,3],axis=0))
+                    ranges.append(np.mean(focArray[:, 6]))
+                    # lrSpeedFoc.fit(focArray[:,5].reshape(-1, 1), focArray[:,8].reshape(-1, 1))
+                i += 0.5
+                # k += 1
+
+            xi = np.array(speedsPlot)
+            yi = np.array(ranges)
+            zi = np.array(focsPLot)
+
+            # p2 = np.poly1d(np.polyfit(xi, yi, 2,w=focsPLot),)
+            #xiBlue = np.linspace(9, 20, 20 - 9)
+
+            # plt.plot([], [], '.', xp, p2(xp))
+            speedList = [8, 9, 10, 11, 12, 13, 14]
+
+            plt.plot(xi, lrSpeedSel.predict(np.concatenate(featuresPlot).reshape(-1, 6)), c='blue')
+            plt.plot(xi, yi, c='red')
+
+            plt.scatter(xi, yi, s=zi / 10, c="red", alpha=0.4, linewidth=4)
+            # plt.xticks(np.arange(np.floor(min(xi)), np.ceil(max(xi)) + 1, 1))
+            # plt.yticks(np.arange(min(yi), max(yi) + 1, 5))
+            plt.xlabel("Speed (knots)")
+            plt.ylabel("FOC (MT / day)")
+            plt.title("Density plot for taskA", loc="center")
+            plt.show()
+
+        i = np.min(seqLSTMB[:, 3])
+        maxSpeedB = np.max(seqLSTMB[:, 3])
         focsPLot = []
         speedsPlot = []
         ranges = []
         featuresPlot = []
-        while i <= maxSpeedA:
+        while i <= maxSpeedB:
             # workbook._sheets[sheet].insert_rows(k+27)
-            focArray = np.array([k for k in seqLSTMA if float(k[3]) >= i - 0.25 and float(k[3]) <= i + 0.25])
+            focArray = np.array([k for k in seqLSTMB if float(k[3]) >= i - 0.25 and float(k[3]) <= i + 0.25])
             # focsApp.append(str(np.round(focArray.__len__() / focAmount * 100, 2)) + '%')
             '''meanFoc = np.mean(focArray[:, 8])
             stdFoc = np.std(focArray[:, 8])
@@ -1070,8 +955,8 @@ def plotErrBetweenTasks(seqLSTMA, seqLSTMB, lrSpeedSel , lrSpeedFull):
 
             if focArray.__len__() > 0:
                 focsPLot.append(focArray.__len__())
-                featuresPlot.append(np.mean(focArray[:,:6],axis=0))
-                speedsPlot.append(np.mean(focArray[:,3],axis=0))
+                featuresPlot.append(np.mean(focArray[:, :6], axis=0))
+                speedsPlot.append(np.mean(focArray[:, 3], axis=0))
                 ranges.append(np.mean(focArray[:, 6]))
                 # lrSpeedFoc.fit(focArray[:,5].reshape(-1, 1), focArray[:,8].reshape(-1, 1))
             i += 0.5
@@ -1081,13 +966,8 @@ def plotErrBetweenTasks(seqLSTMA, seqLSTMB, lrSpeedSel , lrSpeedFull):
         yi = np.array(ranges)
         zi = np.array(focsPLot)
 
-        # p2 = np.poly1d(np.polyfit(xi, yi, 2,w=focsPLot),)
-        #xiBlue = np.linspace(9, 20, 20 - 9)
-
-        # plt.plot([], [], '.', xp, p2(xp))
-        speedList = [8, 9, 10, 11, 12, 13, 14]
-
-        plt.plot(xi, lrSpeedSel.predict(np.concatenate(featuresPlot).reshape(-1, 6)), c='blue')
+        plt.plot(xi, lrSpeedSel.predict(np.concatenate(featuresPlot).reshape(-1, 6)), c='blue',label='Base learner with selected mem')
+        plt.plot(xi, lrSpeedFull.predict(np.concatenate(featuresPlot).reshape(-1, 6)), c='green',label='Base learner with full mem')
         plt.plot(xi, yi, c='red')
 
         plt.scatter(xi, yi, s=zi / 10, c="red", alpha=0.4, linewidth=4)
@@ -1095,337 +975,338 @@ def plotErrBetweenTasks(seqLSTMA, seqLSTMB, lrSpeedSel , lrSpeedFull):
         # plt.yticks(np.arange(min(yi), max(yi) + 1, 5))
         plt.xlabel("Speed (knots)")
         plt.ylabel("FOC (MT / day)")
-        plt.title("Density plot for taskA", loc="center")
+        plt.legend()
+        plt.title("Density plot for task B", loc="center")
         plt.show()
 
-    i = np.min(seqLSTMB[:, 3])
-    maxSpeedB = np.max(seqLSTMB[:, 3])
-    focsPLot = []
-    speedsPlot = []
-    ranges = []
-    featuresPlot = []
-    while i <= maxSpeedB:
-        # workbook._sheets[sheet].insert_rows(k+27)
-        focArray = np.array([k for k in seqLSTMB if float(k[3]) >= i - 0.25 and float(k[3]) <= i + 0.25])
-        # focsApp.append(str(np.round(focArray.__len__() / focAmount * 100, 2)) + '%')
-        '''meanFoc = np.mean(focArray[:, 8])
-        stdFoc = np.std(focArray[:, 8])
-        speedFoc = np.array([k for k in focArray if k[8] >= (meanFoc - (3 * stdFoc)) and k[8] <= (meanFoc + (3 * stdFoc))])'''
-
-        if focArray.__len__() > 0:
-            focsPLot.append(focArray.__len__())
-            featuresPlot.append(np.mean(focArray[:, :6], axis=0))
-            speedsPlot.append(np.mean(focArray[:, 3], axis=0))
-            ranges.append(np.mean(focArray[:, 6]))
-            # lrSpeedFoc.fit(focArray[:,5].reshape(-1, 1), focArray[:,8].reshape(-1, 1))
-        i += 0.5
-        # k += 1
-
-    xi = np.array(speedsPlot)
-    yi = np.array(ranges)
-    zi = np.array(focsPLot)
-
-    plt.plot(xi, lrSpeedSel.predict(np.concatenate(featuresPlot).reshape(-1, 6)), c='blue',label='Base learner with selected mem')
-    plt.plot(xi, lrSpeedFull.predict(np.concatenate(featuresPlot).reshape(-1, 6)), c='green',label='Base learner with full mem')
-    plt.plot(xi, yi, c='red')
-
-    plt.scatter(xi, yi, s=zi / 10, c="red", alpha=0.4, linewidth=4)
-    # plt.xticks(np.arange(np.floor(min(xi)), np.ceil(max(xi)) + 1, 1))
-    # plt.yticks(np.arange(min(yi), max(yi) + 1, 5))
-    plt.xlabel("Speed (knots)")
-    plt.ylabel("FOC (MT / day)")
-    plt.legend()
-    plt.title("Density plot for task B", loc="center")
-    plt.show()
-
-
-def baselineLearner():
-    # create model
-    model = keras.models.Sequential()
-
-    model.add(keras.layers.LSTM(50,input_shape=(n_steps, 6,), ))  # return_sequences=True
-
-    model.add(keras.layers.Dense(20, ))
-
-    model.add(keras.layers.Dense(10, ))
-
-    model.add(keras.layers.Dense(1))
-
-    model.compile(loss=keras.losses.mean_squared_error,
-                  optimizer=keras.optimizers.Adam())  # experimental_run_tf_function=False )
-    # print(model.summary())
-
-    return model
-
-
-def trainingBaselinesForFOCestimation(seqLSTMA, seqLSTMB, memoryA, memoryB, alg ):
-    #X_train, X_test, y_train, y_test = train_test_split(seqLSTMB[:, :8], seqLSTMB[:, 8], test_size=0.2, random_state=42)
-    #SplineRegression = sp.Earth()
-    lrA = LinearRegression()
-
-    xa = seqLSTMA[:, :6]
-    ya = seqLSTMA[:, 6]
-    lrA.fit(xa, ya)
-
-
-    print("Memory of taskA: "+str(len(memoryA)))
-    lrBase = LinearRegression()
-
-    xa = seqLSTMA[:, :6]
-    ya = seqLSTMA[:, 6]
-    lrBase.fit(xa, ya)
-
-
-    xb = seqLSTMB[:,:6]
-    yb = seqLSTMB[:, 6]
-
-    lrBase.fit(xb, yb)
-    score = lrBase.score(xb, yb)
-    #print(str(score))
-    maesa_ = []
-    maesb_ = []
-    for i in range(0, len(xb)):
-        y_hat = lrBase.predict(xb[i].reshape(1,-1))[0]
-        err = abs(y_hat - yb[i])
-        maesb_.append(err)
-
-    for i in range(0, len(xa)):
-        y_hat = lrBase.predict(xa[i].reshape(1, -1))[0]
-        err = abs(y_hat - ya[i])
-        maesa_.append(err)
-
-    #print(metrics.r2_score(yb, maes_))
-    #plt.plot(np.linspace(0, len(yb), len(yb)), yb)
-    #plt.plot(np.linspace(0, len(maes_), len(maes_)), maes_)
-    #plt.show()
-    scoreAWM = lrBase.score(xa, ya)
-    scoreBWM = lrBase.score(xb, yb)
+    def baselineLearner(self, ):
+        # create model
+        model = keras.models.Sequential()
 
-    print("Score for A without memory:" + str(np.mean(maesa_)))
-    print("Score for B without memory:" + str(np.mean(maesb_)))
-    print("R2 Score for A without memory:" + str(scoreAWM))
-    print("R2 Score for B without memory:" + str(scoreBWM) + "\n")
+        model.add(keras.layers.LSTM(50,input_shape=(n_steps, 6,), ))  # return_sequences=True
 
-    lrAB = baselineLearner()
-    batchesX = []
-    batchesY = []
-    for i in range(0,len(memoryA)):
+        model.add(keras.layers.Dense(20, ))
 
-        batchesX.append(memoryA[i][:,:6])
-        batchesY.append(memoryA[i][n_steps-1,6])
-
-    batchesX = np.array(batchesX)
-    batchesY = np.array(batchesY)
-
-    batchesXa = []
-    batchesYa = []
-    for i in range(0, len(seqLSTMAmem)):
-        batchesXa.append(seqLSTMAmem[i][:, :6])
-        batchesYa.append(seqLSTMAmem[i][n_steps - 1, 6])
-
-    batchesXa = np.array(batchesXa)
-    batchesYa = np.array(batchesYa)
+        model.add(keras.layers.Dense(10, ))
 
-    batchesXb = []
-    batchesYb = []
-    for i in range(0, len(seqLSTMBmem)):
-        batchesXb.append(seqLSTMBmem[i][:, :6])
-        batchesYb.append(seqLSTMBmem[i][n_steps - 1, 6])
-
-    batchesXb = np.array(batchesXb)
-    batchesYb = np.array(batchesYb)
-    lstmX = np.append(batchesX, batchesXa,axis=0)
-    lstmX = np.append(lstmX, batchesXb, axis=0)
-    lstmY = np.append(batchesY, batchesYa)
-    lstmY = np.append(lstmY, batchesYb)
-
-    lrAB.fit(lstmX, lstmY, epochs=20)
-    #lrAB.layers[0].set_weights([weights, np.array([0] * (genModelKnots - 1))])
-    recosntructA = []
-    for i in range(0,len(memoryA)):
-
-         if i ==0:
-            recon = memoryA[i][0]
-         else:
-             recon = memoryA[i][0]
-         recosntructA.append(recon)
-    #seqAscaled = np.append(np.array(recosntructA[0]).reshape(n_steps, 7), np.array(recosntructA[1:]).reshape(-1, 7), axis=0)
-    seqAscaled = np.array(recosntructA)
-
-    #if memoryB!=None:
-    '''recosntructB = []
-    for i in range(0, len(memoryB)):
-
-        if i == 0:
-            recon = memoryB[i][0]
-        else:
-            recon = memoryB[i][0]
-        recosntructB.append(recon)'''
+        model.add(keras.layers.Dense(1))
 
-    #seqBscaled = np.append(np.array(recosntructB[0]).reshape(n_steps, 7), np.array(recosntructB[1:]).reshape(-1, 7),
-                               #axis=0)
-    #seqBscaled = np.array(recosntructB)
-
-    seqBwithMem = np.append(seqAscaled, seqLSTMB.reshape(-1,7),axis=0)
-
-    #seqAwithMem = np.append(seqBscaled, seqLSTMA.reshape(-1,7),axis=0)
-
-    seqABwithMem = np.append(seqAscaled, seqLSTMB.reshape(-1, 7), axis=0)
-
-
-
-    xab_mem = seqABwithMem[:, :6]
-    yab_mem = seqABwithMem[:, 6]
-
-    #lrAB.fit(xab_mem, yab_mem)
-
-    lrB = LinearRegression()
-    xb_mem = seqBwithMem[:, :6]
-    yb_mem = seqBwithMem[:, 6]
-
-    #lrB = LinearRegression()
-
-
-    lrA = LinearRegression()
-    #xa_mem = seqAwithMem[:, :6]
-    #ya_mem = seqAwithMem[:, 6]
-
-    # lrB = LinearRegression()
-    ###fit ensembles
-    lrA.fit(xb_mem, yb_mem)
-    #lrA.fit(xa_mem, ya_mem)
-
-    ###############################
-    #lrB.fit(xa_mem, ya_mem)
-    lrB.fit(xb_mem, yb_mem)
-
-    maesa_s = []
-    maesb_s = []
-    y_hatsa = []
-    y_hatsb = []
-    for i in range(0,len(batchesXb)):
-        y_hatb = lrAB.predict(batchesXb[i].reshape(1,n_steps,6))[0][0]
-        y_hatsb.append(y_hatb)
-        err = abs(y_hatb - batchesYb[i])
-        maesb_s.append(err)
-
-    for i in range(0,len(batchesXa)):
-        y_hata = lrAB.predict(batchesXa[i].reshape(1,n_steps,6))[0][0]
-        y_hatsa.append(y_hata)
-        err = abs(y_hata - batchesYa[i])
-        maesa_s.append(err)
-
-    scoreASel = lrA.score(xa, ya)
-    scoreBSel = lrB.score(xb, yb)
-    print("Score for A with selective memory:" + str(np.mean(maesa_s)))
-    print("Score for B with selective memory:" + str(np.mean(maesb_s)))
-    print("R2 Score for A with selective memory:" + str(scoreASel))
-    print("R2 Score for B with selective memory:" + str(scoreBSel))
-    print("Score difference: " +str(abs(np.mean(maesb_s) - np.mean(maesa_s)))+"\n")
-
-
-
-    lrAfull = LinearRegression()
-    xa = seqLSTMA[:, :6]
-    ya = seqLSTMA[:, 6]
-    #lrAfull.fit(xa, ya)
-
-    maesa_f = []
-    maesb_f = []
-    stacked =  np.append( seqLSTMA.reshape(-1,7),seqLSTMB,axis=0)
-    #stacked = seqLSTMA
-    xStacked = stacked[:,:6]
-    yStacked = stacked[:, 6]
-    lrAfull.fit(xStacked, yStacked)
-    #################################################
-
-
-
-    for i in range(0,len(xb)):
-        y_hat = lrAfull.predict(xb[i].reshape(1,-1))[0]
-        err = abs(y_hat- yb[i])
-        maesb_f.append(err)
-
-    for i in range(0,len(xa)):
-        y_hat = lrAfull.predict(xa[i].reshape(1,-1))[0]
-        err = abs(y_hat - ya[i])
-        maesa_f.append(err)
-
-    scoreAFull = lrAfull.score(xa, ya)
-    scoreBFull = lrAfull.score(xb, yb)
-
-    print("Score for A with  full memory:" + str(np.mean(maesa_f)))
-    print("Score for B with  full memory:" + str(np.mean(maesb_f)) )
-    print("R2 Score for A with full memory:" + str(scoreAFull) )
-    print("R2 Score for B wuth full memory:" + str(scoreBFull) + "\n")
-
-    #plotErrBetweenTasks(seqLSTMA, seqLSTMB, lrA, lrAfull)
-
-    df = pd.DataFrame.from_dict({"ScoreA without memory": np.mean(maesa_) ,
-                       "ScoreB without memory": np.mean(maesb_),
-                        "R2A without memory:": scoreAWM,
-                        "R2B without memory:": scoreBWM,
-                       "ScoreA with selective memory": np.mean(maesa_s),
-                       "ScoreB with selective memory": np.mean(maesb_s),
-                        "R2A with selective memory:": scoreASel,
-                        "R2B with selective memory:": scoreBSel,
-                       "ScoreA with full memory": np.mean(maesa_f),
-                       "ScoreB with full memory": np.mean(maesb_f),
-                        "R2A with full memory:": scoreAFull,
-                        "R2B with full memory:": scoreBFull,
-                       },orient='index')
-    #df.to_csv('./AE_files/'+alg+'.csv')
-    return df
-#######################################################
-def runAlgorithmsforEvaluation( alg, seqLen):
-    memories = None
-    if alg!='RND':
-        dfs = []
-        memories = []
-        for k in range(0, len(tasksA)):
-            memoryA, memoryB = getMemoryWindowBetweenTaskA_TaskB(seqLen,tasksAMem[k], tasksBMem[k])
-            #memories.append(len(memory))
-            df = trainingBaselinesForFOCestimation(tasksA[k], tasksB[k], memoryA, memoryB, alg)
+        model.compile(loss=keras.losses.mean_squared_error,
+                      optimizer=keras.optimizers.Adam())  # experimental_run_tf_function=False )
+        # print(model.summary())
+
+        return model
+
+    def trainingBaselinesForFOCestimation(self, seqLSTMmem, memoryA, currInd , memories):
+
+        print("Memory of taskA: "+str(len(memoryA)))
+
+        print("LSTM training  of tasks sequentially  . . .")
+        lrBase = self.baselineLearner()
+        maes_sum = []
+        for i in range(0,len(seqLSTMmem)):
+
+            currTask = seqLSTMmem[i]
+
+            print("LSTM training  of task "+str(i)+" . . .")
+
+            x = []
+            y = []
+            for k in range(0, len(currTask)):
+                x.append(currTask[k][:, :6])
+                y.append(currTask[k][n_steps - 1, 6])
+
+            x = np.array(x)
+            y = np.array(y)
+            lrBase.fit(x, y, epochs=20)
+
+            maes_ = []
+            for k in range(0, len(x)):
+                y_hat = lrBase.predict(x[k].reshape(1,n_steps,6))[0][0]
+                err = abs(y_hat - y[k])
+                maes_.append(err)
+
+
+            scoreAWM = 0
+            scoreBWM = 0
+
+            maes_sum.append(maes_)
+
+            print("Score for task "+str(i)+" without memory:" + str(np.mean(maes_)))
+            print("R2 Score for A without memory:" + str(scoreAWM))
+            print("R2 Score for B without memory:" + str(scoreBWM) + "\n")
+
+
+        ##############################################################
+        print("LSTM training of tasks with extracted memory . . ")
+
+        #for i in range(0,len(seqLSTMmem)):
+
+        #currTask = seqLSTMmem[i]
+        lrAB = self.baselineLearner()
+
+        batchesXmem = []
+        batchesYmem = []
+        for i in range(0,len(memoryA)):
+
+            batchesXmem.append(memoryA[i][:,:6])
+            batchesYmem.append(memoryA[i][n_steps-1,6])
+
+        batchesXmem = np.array(batchesXmem)
+        batchesYmem = np.array(batchesYmem)
+
+
+        memory = memories[1]
+        batchesXmem1 = []
+        batchesYmem1 = []
+        for i in range(0, len(memory)):
+            batchesXmem1.append(memory[i][:, :6])
+            batchesYmem1.append(memory[i][n_steps - 1, 6])
+
+        batchesXmem1 = np.array(batchesXmem1)
+        batchesYmem1 = np.array(batchesYmem1)
+
+
+        batchesXa = []
+        batchesYa = []
+        prevTask = seqLSTMmem[currInd - 1]
+        for i in range(0, len(prevTask)):
+            batchesXa.append(prevTask[i][:, :6])
+            batchesYa.append(prevTask[i][n_steps - 1, 6])
+
+        batchesXa = np.array(batchesXa)
+        batchesYa = np.array(batchesYa)
+
+        batchesXb = []
+        batchesYb = []
+        currTask = seqLSTMmem[currInd]
+
+        for i in range(0, len(currTask)):
+            batchesXb.append(currTask[i][:, :6])
+            batchesYb.append(currTask[i][n_steps - 1, 6])
+
+        batchesXb = np.array(batchesXb)
+        batchesYb = np.array(batchesYb)
+
+
+        batchesX0 = []
+        batchesY0 = []
+        firstTask = seqLSTMmem[0]
+        for i in range(0, len(firstTask)):
+            batchesX0.append(firstTask[i][:, :6])
+            batchesY0.append(firstTask[i][n_steps - 1, 6])
+
+        batchesX0 = np.array(batchesX0)
+        batchesY0 = np.array(batchesY0)
+
+        lstmX = np.append(batchesX0, batchesXmem,axis=0)
+        lstmX = np.append(lstmX, batchesXa,axis=0)
+        lstmX = np.append(lstmX, batchesXb, axis=0)
+
+        lstmY = np.append(batchesY0, batchesYmem)
+        lstmY = np.append(lstmY, batchesYa)
+        lstmY = np.append(lstmY, batchesYb)
+
+        #tasksMemX = [batchesX0, batchesXmem, batchesXa, batchesXmem1, batchesXb]
+        #tasksMemY = [batchesY0, batchesYmem, batchesYa, batchesYmem1, batchesYb]
+
+        #for lstmX, lstmY in zip(tasksMemX, tasksMemY):
+            #lrAB.fit(lstmX, lstmY, epochs=20)
+        #lrAB.layers[0].set_weights([weights, np.array([0] * (genModelKnots - 1))])
+        lrAB.fit(lstmX, lstmY, epochs=20)
+
+        recosntructA = []
+        for i in range(0,len(memoryA)):
+
+             if i ==0:
+                recon = memoryA[i][0]
+             else:
+                 recon = memoryA[i][0]
+             recosntructA.append(recon)
+
+
+        maesprev_s = []
+        maescurr_s = []
+        maes0_s = []
+        y_hatsprev = []
+        y_hatscurr = []
+        y_hats0 = []
+        for i in range(0,len(batchesXb)):
+            y_hatcurr = lrAB.predict(batchesXb[i].reshape(1,n_steps,6))[0][0]
+            y_hatscurr.append(y_hatcurr)
+            err = abs(y_hatcurr - batchesYb[i])
+            maescurr_s.append(err)
+
+        for i in range(0,len(batchesXa)):
+            y_hatprev = lrAB.predict(batchesXa[i].reshape(1,n_steps,6))[0][0]
+            y_hatsprev.append(y_hatprev)
+            err = abs(y_hatprev - batchesYa[i])
+            maesprev_s.append(err)
+
+        for i in range(0,len(batchesX0)):
+            y_hat0 = lrAB.predict(batchesX0[i].reshape(1,n_steps,6))[0][0]
+            y_hats0.append(y_hat0)
+            err = abs(y_hat0 - batchesY0[i])
+            maes0_s.append(err)
+
+        maes_s = [maes0_s, maesprev_s, maescurr_s]
+
+        for ind in range(0,len(seqLSTMmem)):
+            print("Score for task "+str(ind)+" with selective memory:" + str(np.mean(maes_s[ind])))
+
+        #print("Score for B with selective memory:" + str(np.mean(maesb_s)))
+        #print("R2 Score for A with selective memory:" + str(scoreASel))
+        #print("R2 Score for B with selective memory:" + str(scoreBSel))
+        #print("Score difference: " +str(abs(np.mean(maesb_s) - np.mean(maesa_s)))+"\n")
+
+
+        print("LSTM training with full memory of tasks . . ")
+        lrAfull = self.baselineLearner()
+
+        xa = []
+        ya = []
+        prevTask = seqLSTMmem[currInd - 1]
+        for i in range(0, len(prevTask)):
+            xa.append(prevTask[i][:, :6])
+            ya.append(prevTask[i][n_steps - 1, 6])
+
+        xa = np.array(xa)
+        ya = np.array(ya)
+
+
+        xb = []
+        yb = []
+        currTask = seqLSTMmem[currInd ]
+        for i in range(0, len(currTask)):
+            xb.append(currTask[i ][:, :6])
+            yb.append(currTask[i ][n_steps - 1, 6])
+
+        xb = np.array(xb)
+        yb = np.array(yb)
+
+        x0 = []
+        y0 = []
+        firstTask = seqLSTMmem[0]
+        for i in range(0, len(firstTask)):
+            x0.append(firstTask[i][:, :6])
+            y0.append(firstTask[i][n_steps - 1, 6])
+
+        lstmXfull = np.append(x0, xa, axis=0)
+        lstmXfull = np.append(lstmXfull, xb, axis=0)
+        lstmYfull = np.append(y0, ya)
+        lstmYfull = np.append(lstmYfull, yb)
+
+
+
+        lrAfull.fit(lstmXfull, lstmYfull, epochs=20)
+
+
+        maesa_f = []
+        maesb_f = []
+        maes0_f = []
+        for i in range(0,len(xb)):
+            y_hat = lrAfull.predict(xb[i].reshape(1,n_steps,6))[0][0]
+            err = abs(y_hat- yb[i])
+            maesb_f.append(err)
+
+        for i in range(0,len(xa)):
+            y_hat = lrAfull.predict(xa[i].reshape(1,n_steps,6))[0][0]
+            err = abs(y_hat - ya[i])
+            maesa_f.append(err)
+
+        for i in range(0,len(xa)):
+            y_hat = lrAfull.predict(x0[i].reshape(1,n_steps,6))[0][0]
+            err = abs(y_hat - y0[i])
+            maes0_f.append(err)
+
+        scoreAFull = 0
+        scoreBFull = 0
+
+        maes_ = [maes0_f, maesa_f, maesb_f]
+
+        for ind in range(0, len(seqLSTMmem)):
+            print("Score for task "+str(ind)+" with full memory:" + str(np.mean(maes_[ind])))
+
+
+
+
+        df = pd.DataFrame.from_dict({"ScoreA without memory": np.mean(maes_sum[0]) ,
+                           "ScoreB without memory": np.mean(maes_sum[1]),
+                            "ScoreC without memory": np.mean(maes_sum[2]),
+
+                           "ScoreA with selective memory": np.mean(maes_s[0]),
+                           "ScoreB with selective memory": np.mean(maes_s[1]),
+                            "ScoreC with selective memory": np.mean(maes_s[2]),
+
+                           "ScoreA with full memory": np.mean(maes_[0]),
+                           "ScoreB with full memory": np.mean(maes_[1]),
+                        "ScoreC with full memory": np.mean(maes_[2]),
+
+                           },orient='index')
+        #df.to_csv('./AE_files/'+alg+'.csv')
+        return df
+
+
+    def runAlgorithmsforEvaluation(self,  alg, seqLen):
+        memories = None
+        if alg!='RND':
+            dfs = []
+            memories = []
+            for k in range(0, len(tasksNew)):
+
+                if k==0 :
+                    memory, memoryB = self.getMemoryWindowBetweenTaskA_TaskB(seqLen, tasksNew[k], tasksNew[k+1])
+                elif k < len(tasksNew) - 1:
+                    memory, memoryB = self.getMemoryWindowBetweenTaskA_TaskB(seqLen, tasksNew[k], tasksNew[k + 1])
+
+                memories.append(memory)
+
+            df = self.trainingBaselinesForFOCestimation(tasksNew, memory, 2, memories)
             dfs.append(df)
 
-        merged = pd.concat(dfs)
-        merged.to_csv('./AE_files/' + alg + '.csv')
+            merged = pd.concat(dfs)
+            merged.to_csv('./AE_files/' + alg + '.csv')
 
-    if alg =='RND':
-        dfs = []
-        alg = 'RND'
-        for k in range(0, 5):
-            randomMemoryofTaskA = seqLSTMA[np.random.randint(seqLSTMA.shape[0], size=len(memories[k])), :]
+        if alg =='RND':
+            dfs = []
+            alg = 'RND'
+            for k in range(0, 5):
+                randomMemoryofTaskA = seqLSTMA[np.random.randint(seqLSTMA.shape[0], size=len(memories[k])), :]
 
-            df = trainingBaselinesForFOCestimation(seqLSTMA, seqLSTMB, randomMemoryofTaskA, alg)
-            dfs.append(df)
+                df = self.trainingBaselinesForFOCestimation(seqLSTMA, seqLSTMB, randomMemoryofTaskA, alg)
+                dfs.append(df)
 
-        merged = pd.concat(dfs)
-        merged.to_csv('./AE_files/' + alg + '.csv')
+            merged = pd.concat(dfs)
+            merged.to_csv('./AE_files/' + alg + '.csv')
 
-    return memories
+        return memories
 
 def main():
 
     #plotDistributions(seqLSTMA,seqLSTMB,'foc')
     #return
     # memory = pd.read_csv('./AE_files/selectiveMemory_ExtractedOfTaskA.csv', ).values
-    lenMemories = runAlgorithmsforEvaluation('LR', lenS )
+    aedetect = AE_detect()
+
+    lenMemories = aedetect.runAlgorithmsforEvaluation('LR', lenS )
     pd.DataFrame({'memories':lenMemories}).to_csv('./AE_files/lenMemories.csv')
     lr = pd.read_csv('./AE_files/LR.csv').values
 
     fullMemMeanErrA = np.mean(np.array([k for k in lr if k[0] == 'ScoreA with full memory'])[:, 1])
     fullMemMeanErrB = np.mean(np.array([k for k in lr if k[0] == 'ScoreB with full memory'])[:, 1])
+    fullMemMeanErrC = np.mean(np.array([k for k in lr if k[0] == 'ScoreC with full memory'])[:, 1])
 
     selMemMeanErrA = np.mean(np.array([k for k in lr if k[0] == 'ScoreA with selective memory'])[:, 1])
     selMemMeanErrB = np.mean(np.array([k for k in lr if k[0] == 'ScoreB with selective memory'])[:, 1])
+    selMemMeanErrC = np.mean(np.array([k for k in lr if k[0] == 'ScoreC with selective memory'])[:, 1])
 
     withoutMemMeanErrA = np.mean(np.array([k for k in lr if k[0] == 'ScoreA without memory'])[:, 1])
     withoutMemMeanErrB = np.mean(np.array([k for k in lr if k[0] == 'ScoreB without memory'])[:, 1])
+    withoutMemMeanErrC = np.mean(np.array([k for k in lr if k[0] == 'ScoreC without memory'])[:, 1])
 
-    print("full MEM error for A and B "+str((fullMemMeanErrA + fullMemMeanErrB)/2))
-    print("sel MEM error for A and B " + str((selMemMeanErrA + selMemMeanErrB) / 2))
-    print("without MEM error for A and B " + str((withoutMemMeanErrA + withoutMemMeanErrB) / 2))
+    print("full MEM error for A, B, C "+str((fullMemMeanErrA + fullMemMeanErrB + fullMemMeanErrC)/3))
+    print("sel MEM error for A, B, C " + str((selMemMeanErrA + selMemMeanErrB + selMemMeanErrC) / 3))
+    print("without MEM error for A, B, C " + str((withoutMemMeanErrA + withoutMemMeanErrB + withoutMemMeanErrC) / 3))
 
 
     #print(str(len(memory)))
