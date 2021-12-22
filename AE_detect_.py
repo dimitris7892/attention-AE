@@ -920,6 +920,18 @@ class AE_detect():
         #currTask = seqLSTMmem[i]
         lrAB = self.baselineLearner()
 
+        batchesXmema = []
+        batchesYmema = []
+        memoryA = memories[0]
+        for i in range(0, len(memoryA)):
+            batchesXmema.append(memoryA[i][:, :6])
+            batchesYmema.append(memoryA[i][n_steps - 1, 6])
+
+        batchesXmema = np.array(batchesXmema)
+        batchesYmema = np.array(batchesYmema)
+
+        ####################################################################
+
         batchesXmem = []
         batchesYmem = []
         for i in range(0,len(memoryA)):
@@ -988,41 +1000,47 @@ class AE_detect():
         #for lstmX, lstmY in zip(tasksMemX, tasksMemY):
             #lrAB.fit(lstmX, lstmY, epochs=20)
         #lrAB.layers[0].set_weights([weights, np.array([0] * (genModelKnots - 1))])
-        lrAB.fit(lstmX, lstmY, epochs=20)
-
-        recosntructA = []
-        for i in range(0,len(memoryA)):
-
-             if i ==0:
-                recon = memoryA[i][0]
-             else:
-                 recon = memoryA[i][0]
-             recosntructA.append(recon)
-
-
         maesprev_s = []
         maescurr_s = []
         maes0_s = []
         y_hatsprev = []
         y_hatscurr = []
         y_hats0 = []
+
+        lrAB.fit(batchesX0, batchesY0, epochs=20)
+
+        for i in range(0, len(batchesX0)):
+            y_hat0 = lrAB.predict(batchesX0[i].reshape(1, n_steps, 6))[0][0]
+            y_hats0.append(y_hat0)
+            err = abs(y_hat0 - batchesY0[i])
+            maes0_s.append(err)
+
+        lstmXa = np.append(batchesXmema, batchesXa, axis=0)
+        lstmYa = np.append(batchesYmema, batchesYa)
+
+        lrAB.fit(batchesXa, batchesYa, epochs=20)
+
+        #lrAB.fit(batchesXa, batchesYa, epochs=20)
+        for i in range(0, len(batchesXa)):
+            y_hatprev = lrAB.predict(batchesXa[i].reshape(1, n_steps, 6))[0][0]
+            y_hatsprev.append(y_hatprev)
+            err = abs(y_hatprev - batchesYa[i])
+            maesprev_s.append(err)
+
+        lstmXb = np.append(batchesXmem, batchesXb, axis=0)
+        lstmYb = np.append(batchesYmem, batchesYb)
+
+
+        #lrAB.fit(batchesXmem, batchesYmem, epochs=20)
+        lrAB.fit(lstmXb, lstmYb, epochs=20)
+
+
         for i in range(0,len(batchesXb)):
             y_hatcurr = lrAB.predict(batchesXb[i].reshape(1,n_steps,6))[0][0]
             y_hatscurr.append(y_hatcurr)
             err = abs(y_hatcurr - batchesYb[i])
             maescurr_s.append(err)
 
-        for i in range(0,len(batchesXa)):
-            y_hatprev = lrAB.predict(batchesXa[i].reshape(1,n_steps,6))[0][0]
-            y_hatsprev.append(y_hatprev)
-            err = abs(y_hatprev - batchesYa[i])
-            maesprev_s.append(err)
-
-        for i in range(0,len(batchesX0)):
-            y_hat0 = lrAB.predict(batchesX0[i].reshape(1,n_steps,6))[0][0]
-            y_hats0.append(y_hat0)
-            err = abs(y_hat0 - batchesY0[i])
-            maes0_s.append(err)
 
         maes_s = [maes0_s, maesprev_s, maescurr_s]
 
@@ -1132,7 +1150,7 @@ class AE_detect():
                 if k==0 :
                     memory, memoryB = self.getMemoryWindowBetweenTaskA_TaskB(seqLen, tasksNew[k], tasksNew[k+1])
                 elif k < len(tasksNew) - 1:
-                    memory, memoryB = self.getMemoryWindowBetweenTaskA_TaskB(seqLen, tasksNew[k], tasksNew[k + 1])
+                    memory, memoryB = self.getMemoryWindowBetweenTaskA_TaskB(seqLen, memory, tasksNew[k + 1])
 
                 memories.append(memory)
 
