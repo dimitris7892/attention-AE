@@ -25,7 +25,7 @@ from AttentionDecoder import AttentionDecoder
 from sklearn import metrics
 from sklearn.model_selection import train_test_split
 from random import randrange, sample
-from pyinform import conditional_entropy
+#from pyinform import conditional_entropy
 from  tensorflow.python.framework import ops
 from tensorflow.python.framework import smart_cond
 from tensorflow.python.framework import tensor_util
@@ -38,9 +38,9 @@ from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import math_ops
 import matplotlib.patches as patches
 import pyearth as sp
-from skgof import ks_test, cvm_test, ad_test
+#from skgof import ks_test, cvm_test, ad_test
 import extractSequentialTasks as extTasks
-
+import openpyxl
 
 extasks = extTasks.extractSequencialTasks()
 
@@ -152,7 +152,7 @@ class LSTM_AE_IW(keras.Model):
     def train_step(self, data):
 
         with tf.GradientTape() as tape:
-            #data = data[0]
+            data = data[0]
 
             encoderOutput = self.encoder(data)
             reconstruction = self.decoder(encoderOutput)
@@ -542,18 +542,18 @@ class AE_detect():
         inputs = keras.Input(shape=(features, timesteps))#(7,20)
 
         # keras.layers.Bidirectional(
-        encoded = (layers.LSTM(n_steps - int(n_steps/2), return_sequences=True, activation='relu'))(inputs)
+        encoded = (layers.LSTM(n_steps - int(n_steps/2), return_sequences=True, activation='tanh'))(inputs)
 
-        encoded =  layers.LSTM(timesteps, return_sequences=True, activation='relu')(encoded)
+        encoded =  layers.LSTM(timesteps, return_sequences=True, activation='tanh')(encoded)
         #encoded = TimeDistributed(layers.Dense(latent_dim, ))(encoded)
         # TimeDistributed(layers.Dense(latent_dim, ))(encoded)
         # layers.LSTM(latent_dim, return_sequences=True )(encoded)#
         latent_inputs = keras.Input(shape=( features, timesteps))
         # decoded = layers.LSTM(1000, return_sequences=True, name='dec2', activation='tanh')(latent_inputs)
 
-        decoded =  (layers.LSTM(n_steps - int(n_steps/2),  name='dec4', return_sequences=True, activation='relu'))(latent_inputs)
+        decoded =  (layers.LSTM(n_steps - int(n_steps/2),  name='dec4', return_sequences=True, activation='tanh'))(latent_inputs)
 
-        decoded =  layers.LSTM(timesteps, return_sequences=True, activation='relu')(decoded)
+        decoded =  layers.LSTM(timesteps, return_sequences=True, activation='tanh')(decoded)
         # decoded = layers.Dense(input_dim, activation="relu", )(decoded)
 
         #sequence_autoencoder = keras.Model(inputs, decoded)
@@ -660,10 +660,12 @@ class AE_detect():
             #batch = min_max_scalerA.inverse_transform((seqA[i] + (seqA[i] * encodedTimeSeriesA[i])).transpose())
             #batches.append(batch)
             seq_a = seqLSTMA[i]#.transpose()
-            seq_a = min_max_scalerA.inverse_transform(seqA[i].transpose())
+            #seq_a = min_max_scalerA.inverse_transform(seqA[i].transpose())
+            seq_a = min_max_scalerA.inverse_transform(encodedTimeSeriesA[i].transpose())
             weight = encodedTimeSeriesA[i].transpose()
             #weight = np.random.random((20, 7))
-            batch = (seq_a + (weight))
+            #batch = (seq_a + (weight))
+            batch = (seq_a)
             batches.append(batch)
 
         selectiveMemory_ExtractedOfTaskA = np.array(batches)
@@ -671,134 +673,7 @@ class AE_detect():
 
         return selectiveMemory_ExtractedOfTaskA, None
 
-    def trainAE(self, ):
-        encoder, decoder = baselineModel()
-        lstm_autoencoderInit = LSTM_AE(encoder,decoder,  )
-        lstm_autoencoderInit.compile(optimizer=keras.optimizers.Adam())
 
-
-        for task in tasks:
-
-            lstm_autoencoderInit.fit(task,task, epochs=100 )
-
-        X_train_normB = min_max_scaler.fit_transform(seqLSTMB)
-        x_test_encoded = lstm_autoencoderInit.encoder.predict(X_train_normB.reshape(1000,n_steps,9))
-        decSeqInit = lstm_autoencoderInit.decoder.predict(x_test_encoded)
-        decSeqInit =  decSeqInit.reshape(1000,7)
-        decSeqInit  = min_max_scaler.inverse_transform(decSeqInit)
-        scoreAE = np.linalg.norm(seqLSTMB.reshape(1000,7)-decSeqInit,axis=0)
-            #
-        print("AE Score :  " + str(scoreAE))
-
-        with open('./AE_files/decodedSeaquenceofNewTaskWithoutMemory.csv', mode='w') as data:
-            data_writer = csv.writer(data, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
-            for i in range(0, len(decSeqInit)):
-                data_writer.writerow(
-                    [decSeqInit[i][0], decSeqInit[i][1], decSeqInit[i][2], decSeqInit[i][3],
-                     decSeqInit[i][4],
-                     decSeqInit[i][5], decSeqInit[i][6], decSeqInit[i][7], decSeqInit[i][8]
-                     ])
-        return scoreAE
-
-    def trainAE_withMemoryOfPrevTask_inLS(self, selectiveMemoryExtractedOfTaskA):
-
-        decSeqWithDiffWindow = []
-        mem = selectiveMemoryExtractedOfTaskA.shape[1]
-        #addMemoryToNewTask = np.append(selectiveMemoryExtractedOfTaskA, seqLSTMB, axis=0)
-
-        #newDimension = len(addMemoryToNewTask)
-
-        min_max_scaler = MinMaxScaler()
-        #X_train_norm = min_max_scaler.fit_transform(addMemoryToNewTask)
-        X_train_normB = min_max_scaler.fit_transform(seqLSTMB)
-
-        X_train_normB = X_train_normB.reshape(len(X_train_normB),n_steps,9)
-
-        #addMemoryToNewTask = X_train_norm.reshape(len(X_train_norm),n_steps,9)
-
-        encoder, decoder = baselineModel(mem)
-        lstm_autoencoderMem = LSTM_AE(encoder, decoder,)
-        lstm_autoencoderMem.compile(optimizer=keras.optimizers.Adam())
-        lstm_autoencoderMem.fit(X_train_normB, X_train_normB, epochs=10)
-
-
-        X_train_normB = X_train_normB.reshape(1000, n_steps, 7)
-
-        x_test_encoded = lstm_autoencoderMem.encoder.predict(X_train_normB)
-
-        newEncodedLatentSpace = np.append(x_test_encoded,selectiveMemoryExtractedOfTaskA.reshape(mem, 1,9), axis=0)
-
-        decSeqMem = lstm_autoencoderMem.decoder.predict(newEncodedLatentSpace)
-        #decSeqMem = decSeqMem.reshape(1000,9)
-        decSeqMem = decSeqMem.reshape(len(decSeqMem), 7)
-        decSeqMem = min_max_scaler.inverse_transform(decSeqMem)
-
-        decSeqWithDiffWindow.append(decSeqMem)
-            # score , acc = lstm_autoencoder.evaluate(tasks[i], tasks[i], epochs=10)
-        #diff = newDimension - 1000
-        decSeq = decSeqMem.reshape(len(decSeqMem),9)#[diff:,:]
-
-
-        with open('./AE_files/decodedSequenceofNewTaskWithMemory.csv', mode='w') as data:
-            data_writer = csv.writer(data, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
-            for i in range(0, len(decSeq)):
-                data_writer.writerow(
-                    [decSeq[i][0], decSeq[i][1], decSeq[i][2], decSeq[i][3],
-                     decSeq[i][4],
-                     decSeq[i][5], decSeq[i][6], decSeq[i][7], decSeq[i][8]
-                     ])
-
-        scoreAE_mem = np.linalg.norm(seqLSTMB.reshape(1000,9) - decSeq[:-mem],axis=0)
-            #scipy.stats.entropy(seqLSTMB.reshape(1000,9) ,qk=decSeq)
-            #
-        print("AE Score with mem window: " + str(len(selectiveMemoryExtractedOfTaskA)) + "  " + str(scoreAE_mem))
-        return scoreAE_mem
-
-    def trainAE_withMemoryOfPrevTask(self, selectiveMemoryExtractedOfTaskA):
-        decSeqWithDiffWindow = []
-        addMemoryToNewTask = np.append(selectiveMemoryExtractedOfTaskA, seqLSTMB, axis=0)
-
-        newDimension = len(addMemoryToNewTask)
-
-        min_max_scaler = MinMaxScaler()
-        X_train_norm = min_max_scaler.fit_transform(addMemoryToNewTask)
-        X_train_normB = min_max_scaler.fit_transform(seqLSTMB)
-
-        addMemoryToNewTask = X_train_norm.reshape(len(X_train_norm),n_steps,9)
-
-
-
-        encoder, decoder = baselineModel(newDimension)
-        lstm_autoencoderMem = LSTM_AE(encoder, decoder,)
-        lstm_autoencoderMem.compile(optimizer=keras.optimizers.Adam())
-        lstm_autoencoderMem.fit(addMemoryToNewTask, addMemoryToNewTask, epochs=100)
-
-        x_test_encoded = lstm_autoencoderMem.encoder.predict(X_train_normB.reshape(1000,n_steps,9))
-        decSeqMem = lstm_autoencoderMem.decoder.predict(x_test_encoded)
-        decSeqMem = decSeqMem.reshape(1000,9)
-        decSeqMem = min_max_scaler.inverse_transform(decSeqMem)
-
-        decSeqWithDiffWindow.append(decSeqMem)
-            # score , acc = lstm_autoencoder.evaluate(tasks[i], tasks[i], epochs=10)
-        diff = newDimension - 1000
-        decSeq = decSeqMem.reshape(1000,9)#[diff:,:]
-
-
-        with open('./AE_files/decodedSequenceofNewTaskWithMemory.csv', mode='w') as data:
-            data_writer = csv.writer(data, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
-            for i in range(0, len(decSeq)):
-                data_writer.writerow(
-                    [decSeq[i][0], decSeq[i][1], decSeq[i][2], decSeq[i][3],
-                     decSeq[i][4],
-                     decSeq[i][5], decSeq[i][6], decSeq[i][7], decSeq[i][8]
-                     ])
-
-        scoreAE_mem = np.linalg.norm(seqLSTMB.reshape(1000,9) - decSeq,axis=0)
-            #scipy.stats.entropy(seqLSTMB.reshape(1000,9) ,qk=decSeq)
-            #
-        print("AE Score with mem window: " + str(diff) + "  " + str(scoreAE_mem))
-        return scoreAE_mem
-    #####################
     def plotDistributions(self, seqA,seqB ,var):
 
         dfA = pd.DataFrame({'stwA':seqA[:,3]})
