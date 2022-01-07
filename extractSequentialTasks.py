@@ -11,9 +11,10 @@ class extractSequencialTasks:
         pass
 
 
-    def exctractTasks(self, numOfTasks, n_steps, lenS, start = 22000, ):
+    def exctractTasks(self, numOfTasks, n_steps, lenS, start = 2000, ):
 
         trData = self.getData()
+        offset = 5000 #5 days
 
         raw_seq = trData  # [:4000]
 
@@ -29,7 +30,7 @@ class extractSequencialTasks:
 
             tasksMem.append(seqLSTMmem)
 
-            start += lenS
+            start += (lenS + offset)
 
         return tasksMem
 

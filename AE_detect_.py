@@ -41,6 +41,7 @@ import pyearth as sp
 #from skgof import ks_test, cvm_test, ad_test
 import extractSequentialTasks as extTasks
 import openpyxl
+from sklearn.metrics import mean_squared_error as mse
 
 extasks = extTasks.extractSequencialTasks()
 
@@ -61,7 +62,7 @@ tasksAMem=[]
 tasksBMem=[]
 lenS = 1000
 start = 13000
-tasksNew = extasks.exctractTasks(3, 20, 1000)
+tasksNew = extasks.exctractTasks(2, 20, 1000)
 
 
 class Sampling(layers.Layer):
@@ -162,8 +163,6 @@ class LSTM_AE_IW(keras.Model):
             #keras.losses.mean_squared_error(data,reconstruction) +\
 
 
-
-
             total_loss = reconstruction_loss
         grads = tape.gradient(total_loss, self.trainable_weights)
         self.optimizer.apply_gradients(zip(grads, self.trainable_weights))
@@ -223,6 +222,7 @@ class AE_detect():
 
     def __init__(self):
 
+        self.weights = []
         '''initialize window indentification AE '''
         encoderA, decoderA = self.windwowIdentificationModel()
         # print(encoderA.summary())
@@ -362,10 +362,8 @@ class AE_detect():
         """
         return jEntropy(Y, X) - entropy(X)
 
-
     def custom_loss(self, y_true, y_pred):
-        return tf.keras.losses.mean_squared_error(y_true, y_pred)\
-        +tf.keras.losses.kullback_leibler_divergence(y_true, y_pred)
+        return tf.keras.losses.mean_squared_error(y_true, y_pred) + tf.keras.losses.mean_squared_error(self.weightsCurr , self.weightsPrev)
 
     def vae_LSTM_Model(self, ):
         ##ENCODER
@@ -426,7 +424,6 @@ class AE_detect():
         decoder = keras.Model(latent_inputs, decoder_outputs, name="decoder")
         decoder.summary()
         return encoder, decoder
-
 
     def windwowIdentificationModelALT(self, ):
         timesteps = 1 # Length of your sequences
@@ -595,28 +592,6 @@ class AE_detect():
 
         return encoder, decoder
 
-    def VAE_getMemoryWindowBetweenTaskA_TaskB(self, ):
-
-        seqLSTMBtr = seqLSTMB.transpose()#.reshape(n_steps,9,1000)
-        seqLSTMAtr = seqLSTMA.transpose()#.reshape(n_steps,9,1000)
-
-        encoder , decoder  = VAE_windwowIdentificationModel()
-        windAE = VAE(encoder, decoder)
-        windAE.compile(optimizer=keras.optimizers.Adam())
-
-
-        windAE.fit(seqLSTMAtr,seqLSTMBtr,epochs=200,)
-
-        #windAE_.fit(seqLSTMAtr,seqLSTMAtr,epochs=100,)
-
-        #windEncoder = windAE.layers[:-2]
-        encodedTimeSeries = np.round(windAE.encoder.predict(seqLSTMAtr),2)
-        encodedTimeSeriesReshaped = encodedTimeSeries.reshape(1000,9)
-
-        selectiveMemory_ExtractedOfTaskA = seqLSTMA[[k for k in range(0,1000) if encodedTimeSeriesReshaped[:,k].all()>0]]
-
-        return selectiveMemory_ExtractedOfTaskA
-
     def getMemoryWindowBetweenTaskA_TaskB(self, lenSeq, seqLSTMA, seqLSTMB):
 
         '''scale seqlLSTMA given the task of incremental training
@@ -664,7 +639,7 @@ class AE_detect():
             seq_a = min_max_scalerA.inverse_transform(encodedTimeSeriesA[i].transpose())
             weight = encodedTimeSeriesA[i].transpose()
             #weight = np.random.random((20, 7))
-            #batch = (seq_a + (weight))
+            #batch = (seqA[i].transpose() + (weight))
             batch = (seq_a)
             batches.append(batch)
 
@@ -672,7 +647,6 @@ class AE_detect():
 
 
         return selectiveMemory_ExtractedOfTaskA, None
-
 
     def plotDistributions(self, seqA,seqB ,var):
 
@@ -682,83 +656,6 @@ class AE_detect():
         sns.displot(dfA, x='stwA')
         sns.displot(dfB, x='stwB')
 
-        plt.show()
-
-    def trainAE_withRollingWIndowOfPrevTask(self, seqLSTMA, seqLSTMB):
-        memWindow = [5, 10, 15, 20]
-
-        memoryEncoderLayers = []
-        mem = 0
-        decSeqWithDiffWindow = []
-
-        for mem in memWindow:
-
-            encoder, decoder = baselineModel()
-            lstm_autoencoderMem = LSTM_AE(encoder, decoder,)
-            lstm_autoencoderMem.compile(optimizer=keras.optimizers.Adam())
-
-            memoryOfPrevTask = seqLSTMA[-mem:]
-            addMemoryToNewTask = np.append(memoryOfPrevTask, seqLSTMB, axis=0)
-
-            lstm_autoencoderMem.fit(addMemoryToNewTask, addMemoryToNewTask, epochs=30)
-
-            x_test_encoded = lstm_autoencoderMem.encoder.predict(seqLSTMB)
-            decSeqMem = lstm_autoencoderMem.decoder.predict(x_test_encoded)
-
-            decSeqWithDiffWindow.append(decSeqMem)
-            # score , acc = lstm_autoencoder.evaluate(tasks[i], tasks[i], epochs=10)
-
-            scoreAE_mem = np.linalg.norm(seqLSTMB - decSeqMem)
-            print("AE Score with mem window: " + str(mem) + "  " + str(scoreAE_mem))
-
-            #lstm_autoencoder.fit(tasks[i], tasks[i], epochs=10)
-
-        seqLSTMB = seqLSTMB.reshape(seqLSTMB.shape[0],9)
-        stwOr = seqLSTMB[:,3]
-
-        stwDec = decSeqInit
-        stwDec = stwDec.reshape(stwDec.shape[0],9)
-        stwDec = stwDec[:,3]
-
-        #dfStwOr = pd.DataFrame({"time":np.linspace(0,len(stwOr),len(stwOr)),"stwOr":stwOr})
-        '''stwDec5 = decSeqWithDiffWindow[0]
-        stwDec5 = stwDec5.reshape(1000,9)
-        stwDec5 =stwDec5[:,3]
-        
-        stwDec10 = decSeqWithDiffWindow[1]
-        stwDec10 = stwDec10.reshape(1000,9)
-        stwDec10 =stwDec10[:,3]
-        
-        
-        stwDec15 = decSeqWithDiffWindow[2]
-        stwDec15 = stwDec15.reshape(1000,9)
-        stwDec15 =stwDec15[:,3]
-        
-        
-        stwDec20 = decSeqWithDiffWindow[3]
-        stwDec20 = stwDec20.reshape(1000,9)
-        stwDec20 = stwDec20[:,3]
-        
-        stwDec25 = decSeqWithDiffWindow[4]
-        stwDec25 = stwDec25.reshape(1000,9)
-        stwDec25 = stwDec25[:,3]'''
-
-        stwDec30 = decSeqWithDiffWindow[0]
-        stwDec30 = stwDec30.reshape(stwDec30.shape[0],9)
-        stwDec30 = stwDec30[:,3]
-
-        dfStwDec = pd.DataFrame({"time":np.linspace(0,len(stwDec),len(stwDec)),"stw Original":stwOr,
-                                "stw Decoded without memory":stwDec,
-                                 "stw Decoded with 30min memory of previous task":stwDec30,
-                                },)
-
-        ''' "stw Decoded with memory 10min":stwDec10,
-                                 "stw Decoded with memory 15min":stwDec15,
-                                 "stw Decoded with memory 20min":stwDec20,
-                                 "stw Decoded with memory 25min":stwDec25,
-                                 "stw Decoded with memory 30min":stwDec30,'''
-        dfStwDec.plot(kind='kde')
-        plt.xlim(min(stwDec),max(stwDec))
         plt.show()
 
     def plotErrBetweenTasks(self, seqLSTMA, seqLSTMB, lrSpeedSel , lrSpeedFull):
@@ -866,282 +763,232 @@ class AE_detect():
 
         model.add(keras.layers.Dense(1))
 
-        model.compile(loss=keras.losses.mean_squared_error,
+        model.compile(loss=self.custom_loss,
                       optimizer=keras.optimizers.Adam())  # experimental_run_tf_function=False )
         # print(model.summary())
 
         return model
 
-    def trainingBaselinesForFOCestimation(self, seqLSTMmem, memoryA, currInd , memories):
+    def trainingBaselinesForFOCestimation(self, seqLSTMmem, memoryA, currInd , memories, methods):
 
         print("Memory of taskA: "+str(len(memoryA)))
-
-        print("LSTM training  of tasks sequentially  . . .")
-        lrBase = self.baselineLearner()
+        maesprev_s = [0]
+        maescurr_s = [0]
+        maes0_s = [0]
         maes_sum = []
-        for i in range(0,len(seqLSTMmem)):
+        mape_sum = []
+        maes_s = []
+        mape_s = []
 
-            currTask = seqLSTMmem[i]
+        maesa_f = [0]
+        maesb_f = [0]
+        maes0_f = [0]
+        self.weightsCurr = tf.convert_to_tensor([0.0])
+        self.weightsPrev = tf.convert_to_tensor([0.0])
 
-            print("LSTM training  of task "+str(i)+" . . .")
+        if 'seq' in methods:
+            print("LSTM training  of tasks sequentially  . . .")
+            lrBase = self.baselineLearner()
 
-            x = []
-            y = []
-            for k in range(0, len(currTask)):
-                x.append(currTask[k][:, :6])
-                y.append(currTask[k][n_steps - 1, 6])
+            for i in range(0,len(seqLSTMmem)):
 
-            x = np.array(x)
-            y = np.array(y)
-            lrBase.fit(x, y, epochs=20)
+                currTask = seqLSTMmem[i]
 
-            maes_ = []
-            for k in range(0, len(x)):
-                y_hat = lrBase.predict(x[k].reshape(1,n_steps,6))[0][0]
-                err = abs(y_hat - y[k])
-                maes_.append(err)
+                print("LSTM training  of task "+str(i)+" . . .")
 
+                x = []
+                y = []
+                for k in range(0, len(currTask)):
+                    x.append(currTask[k][:, :6])
+                    y.append(currTask[k][n_steps - 1, 6])
 
-            scoreAWM = 0
-            scoreBWM = 0
+                x = np.array(x)
+                y = np.array(y)
+                lrBase.fit(x, y, epochs=20)
 
-            maes_sum.append(maes_)
+                maes_ = []
+                pes = []
+                for k in range(0, len(x)):
+                    y_hat = lrBase.predict(x[k].reshape(1,n_steps,6))[0][0]
+                    err = abs(y_hat - y[k])
+                    pe =  abs(( y[k] - y_hat)/ y[k])
+                    pes.append(pe)
+                    maes_.append(err)
 
-            print("Score for task "+str(i)+" without memory:" + str(np.mean(maes_)))
-            print("R2 Score for A without memory:" + str(scoreAWM))
-            print("R2 Score for B without memory:" + str(scoreBWM) + "\n")
 
+                maes_sum.append(np.mean(maes_))
+                mape_sum.append(np.mean(pes))
 
-        ##############################################################
-        print("LSTM training of tasks with extracted memory . . ")
+            for ind in range(0, len(tasksNew)):
+                print("Score for task " + str(ind) + " without memory:" + str(maes_sum[ind]))
 
-        #for i in range(0,len(seqLSTMmem)):
+        if 'mem' in methods:
+            ##############################################################
+            print("LSTM training of tasks with extracted memory . . ")
 
-        #currTask = seqLSTMmem[i]
-        lrAB = self.baselineLearner()
+            #for i in range(0,len(seqLSTMmem)):
 
-        batchesXmema = []
-        batchesYmema = []
-        memoryA = memories[0]
-        for i in range(0, len(memoryA)):
-            batchesXmema.append(memoryA[i][:, :6])
-            batchesYmema.append(memoryA[i][n_steps - 1, 6])
+            #currTask = seqLSTMmem[i]
+            lrAB = self.baselineLearner()
 
-        batchesXmema = np.array(batchesXmema)
-        batchesYmema = np.array(batchesYmema)
 
-        ####################################################################
+            for ind in range(0,len(seqLSTMmem)):
 
-        batchesXmem = []
-        batchesYmem = []
-        for i in range(0,len(memoryA)):
+                currTask = seqLSTMmem[ind]
+                batchesX = []
+                batchesY = []
+                for i in range(0, len(currTask)):
+                    batchesX.append(currTask[i][:, :6])
+                    batchesY.append(currTask[i][n_steps - 1, 6])
 
-            batchesXmem.append(memoryA[i][:,:6])
-            batchesYmem.append(memoryA[i][n_steps-1,6])
+                batchesX = np.array(batchesX)
+                batchesY = np.array(batchesY)
 
-        batchesXmem = np.array(batchesXmem)
-        batchesYmem = np.array(batchesYmem)
+                if ind > 0:
+                    batchesXmem = []
+                    batchesYmem = []
+                    memory = memories[ind]
+                    for i in range(0, len(memory)):
+                        batchesXmem.append(memory[i][:, :6])
+                        batchesYmem.append(memory[i][n_steps - 1, 6])
 
+                    batchesXmem = np.array(batchesXmem)
+                    batchesYmem = np.array(batchesYmem)
 
-        memory = memories[1]
-        batchesXmem1 = []
-        batchesYmem1 = []
-        for i in range(0, len(memory)):
-            batchesXmem1.append(memory[i][:, :6])
-            batchesYmem1.append(memory[i][n_steps - 1, 6])
+                    batchesXsel = np.append(batchesXmem, batchesX, axis=0)
+                    batchesYsel = np.append(batchesYmem, batchesY)
 
-        batchesXmem1 = np.array(batchesXmem1)
-        batchesYmem1 = np.array(batchesYmem1)
+                if ind == 0:
 
+                    self.weightsCurr = tf.convert_to_tensor([0.0])
+                    self.weightsPrev = tf.convert_to_tensor([0.0])
+                    lrAB.fit(batchesX, batchesY, epochs=20)
 
-        batchesXa = []
-        batchesYa = []
-        prevTask = seqLSTMmem[currInd - 1]
-        for i in range(0, len(prevTask)):
-            batchesXa.append(prevTask[i][:, :6])
-            batchesYa.append(prevTask[i][n_steps - 1, 6])
+                else:
+                    self.weightsCurr = tf.ragged.constant(lrAB.get_weights()[0])
+                    self.weightsPrev = tf.ragged.constant(self.weights[ind - 1][0])
 
-        batchesXa = np.array(batchesXa)
-        batchesYa = np.array(batchesYa)
+                    lrAB.fit(batchesXsel, batchesYsel, epochs=20)
 
-        batchesXb = []
-        batchesYb = []
-        currTask = seqLSTMmem[currInd]
+                self.weights.append(lrAB.get_weights())
 
-        for i in range(0, len(currTask)):
-            batchesXb.append(currTask[i][:, :6])
-            batchesYb.append(currTask[i][n_steps - 1, 6])
+                maes = []
+                pes = []
+                for i in range(0, len(batchesX)):
+                    y_hat = lrAB.predict(batchesX[i].reshape(1, n_steps, 6))[0][0]
+                    err = abs(y_hat - batchesY[i])
+                    pe = abs((batchesY[i]  - y_hat)/batchesY[i]  )
+                    maes.append(err)
+                    pes.append(pe)
+                maes_s.append(np.mean(maes))
+                mape_s.append(np.mean(pes))
+            ####################################################################
 
-        batchesXb = np.array(batchesXb)
-        batchesYb = np.array(batchesYb)
+            for ind in range(0, len(tasksNew)):
+                print("Score for task " + str(ind) + " with selective memory:" + str(maes_s[ind]))
 
+        if 'full' in methods:
 
-        batchesX0 = []
-        batchesY0 = []
-        firstTask = seqLSTMmem[0]
-        for i in range(0, len(firstTask)):
-            batchesX0.append(firstTask[i][:, :6])
-            batchesY0.append(firstTask[i][n_steps - 1, 6])
+            print("LSTM training with full memory of tasks . . ")
+            lrAfull = self.baselineLearner()
 
-        batchesX0 = np.array(batchesX0)
-        batchesY0 = np.array(batchesY0)
+            xa = []
+            ya = []
+            prevTask = seqLSTMmem[currInd - 1]
+            for i in range(0, len(prevTask)):
+                xa.append(prevTask[i][:, :6])
+                ya.append(prevTask[i][n_steps - 1, 6])
 
-        lstmX = np.append(batchesX0, batchesXmem,axis=0)
-        lstmX = np.append(lstmX, batchesXa,axis=0)
-        lstmX = np.append(lstmX, batchesXb, axis=0)
+            xa = np.array(xa)
+            ya = np.array(ya)
 
-        lstmY = np.append(batchesY0, batchesYmem)
-        lstmY = np.append(lstmY, batchesYa)
-        lstmY = np.append(lstmY, batchesYb)
 
-        #tasksMemX = [batchesX0, batchesXmem, batchesXa, batchesXmem1, batchesXb]
-        #tasksMemY = [batchesY0, batchesYmem, batchesYa, batchesYmem1, batchesYb]
+            xb = []
+            yb = []
+            currTask = seqLSTMmem[currInd ]
+            for i in range(0, len(currTask)):
+                xb.append(currTask[i ][:, :6])
+                yb.append(currTask[i ][n_steps - 1, 6])
 
-        #for lstmX, lstmY in zip(tasksMemX, tasksMemY):
-            #lrAB.fit(lstmX, lstmY, epochs=20)
-        #lrAB.layers[0].set_weights([weights, np.array([0] * (genModelKnots - 1))])
-        maesprev_s = []
-        maescurr_s = []
-        maes0_s = []
-        y_hatsprev = []
-        y_hatscurr = []
-        y_hats0 = []
+            xb = np.array(xb)
+            yb = np.array(yb)
 
-        lrAB.fit(batchesX0, batchesY0, epochs=20)
+            x0 = []
+            y0 = []
+            firstTask = seqLSTMmem[0]
+            for i in range(0, len(firstTask)):
+                x0.append(firstTask[i][:, :6])
+                y0.append(firstTask[i][n_steps - 1, 6])
 
-        for i in range(0, len(batchesX0)):
-            y_hat0 = lrAB.predict(batchesX0[i].reshape(1, n_steps, 6))[0][0]
-            y_hats0.append(y_hat0)
-            err = abs(y_hat0 - batchesY0[i])
-            maes0_s.append(err)
+            lstmXfull = np.append(x0, xa, axis=0)
+            lstmXfull = np.append(lstmXfull, xb, axis=0)
+            lstmYfull = np.append(y0, ya)
+            lstmYfull = np.append(lstmYfull, yb)
 
-        lstmXa = np.append(batchesXmema, batchesXa, axis=0)
-        lstmYa = np.append(batchesYmema, batchesYa)
 
-        lrAB.fit(batchesXa, batchesYa, epochs=20)
 
-        #lrAB.fit(batchesXa, batchesYa, epochs=20)
-        for i in range(0, len(batchesXa)):
-            y_hatprev = lrAB.predict(batchesXa[i].reshape(1, n_steps, 6))[0][0]
-            y_hatsprev.append(y_hatprev)
-            err = abs(y_hatprev - batchesYa[i])
-            maesprev_s.append(err)
+            lrAfull.fit(lstmXfull, lstmYfull, epochs=20)
 
-        lstmXb = np.append(batchesXmem, batchesXb, axis=0)
-        lstmYb = np.append(batchesYmem, batchesYb)
 
 
-        #lrAB.fit(batchesXmem, batchesYmem, epochs=20)
-        lrAB.fit(lstmXb, lstmYb, epochs=20)
+            for i in range(0,len(xb)):
+                y_hat = lrAfull.predict(xb[i].reshape(1,n_steps,6))[0][0]
+                err = abs(y_hat- yb[i])
+                maesb_f.append(err)
 
+            for i in range(0,len(xa)):
+                y_hat = lrAfull.predict(xa[i].reshape(1,n_steps,6))[0][0]
+                err = abs(y_hat - ya[i])
+                maesa_f.append(err)
 
-        for i in range(0,len(batchesXb)):
-            y_hatcurr = lrAB.predict(batchesXb[i].reshape(1,n_steps,6))[0][0]
-            y_hatscurr.append(y_hatcurr)
-            err = abs(y_hatcurr - batchesYb[i])
-            maescurr_s.append(err)
+            for i in range(0,len(xa)):
+                y_hat = lrAfull.predict(x0[i].reshape(1,n_steps,6))[0][0]
+                err = abs(y_hat - y0[i])
+                maes0_f.append(err)
 
 
-        maes_s = [maes0_s, maesprev_s, maescurr_s]
 
-        for ind in range(0,len(seqLSTMmem)):
-            print("Score for task "+str(ind)+" with selective memory:" + str(np.mean(maes_s[ind])))
+            for ind in range(0, len(tasksNew)):
+                print("Score for task "+str(ind)+" with full memory:" + str(np.mean(maes_[ind])))
 
-        #print("Score for B with selective memory:" + str(np.mean(maesb_s)))
-        #print("R2 Score for A with selective memory:" + str(scoreASel))
-        #print("R2 Score for B with selective memory:" + str(scoreBSel))
-        #print("Score difference: " +str(abs(np.mean(maesb_s) - np.mean(maesa_s)))+"\n")
 
+        dict = {"trMethod": {'sel':[], "without": []}}
 
-        print("LSTM training with full memory of tasks . . ")
-        lrAfull = self.baselineLearner()
+        for k in range(0,len(tasksNew)):
 
-        xa = []
-        ya = []
-        prevTask = seqLSTMmem[currInd - 1]
-        for i in range(0, len(prevTask)):
-            xa.append(prevTask[i][:, :6])
-            ya.append(prevTask[i][n_steps - 1, 6])
+            #selPerf = np.round(100 - mape_s[k],2)
+            #withoutPerf = np.round(100 - mape_sum[k],2)
+            dict['trMethod']['sel'].append(maes_s[k])
+            dict['trMethod']['without'].append( maes_sum[k])
 
-        xa = np.array(xa)
-        ya = np.array(ya)
 
+        df = pd.DataFrame.from_dict(dict['trMethod'])
 
-        xb = []
-        yb = []
-        currTask = seqLSTMmem[currInd ]
-        for i in range(0, len(currTask)):
-            xb.append(currTask[i ][:, :6])
-            yb.append(currTask[i ][n_steps - 1, 6])
-
-        xb = np.array(xb)
-        yb = np.array(yb)
-
-        x0 = []
-        y0 = []
-        firstTask = seqLSTMmem[0]
-        for i in range(0, len(firstTask)):
-            x0.append(firstTask[i][:, :6])
-            y0.append(firstTask[i][n_steps - 1, 6])
-
-        lstmXfull = np.append(x0, xa, axis=0)
-        lstmXfull = np.append(lstmXfull, xb, axis=0)
-        lstmYfull = np.append(y0, ya)
-        lstmYfull = np.append(lstmYfull, yb)
-
-
-
-        lrAfull.fit(lstmXfull, lstmYfull, epochs=20)
-
-
-        maesa_f = []
-        maesb_f = []
-        maes0_f = []
-        for i in range(0,len(xb)):
-            y_hat = lrAfull.predict(xb[i].reshape(1,n_steps,6))[0][0]
-            err = abs(y_hat- yb[i])
-            maesb_f.append(err)
-
-        for i in range(0,len(xa)):
-            y_hat = lrAfull.predict(xa[i].reshape(1,n_steps,6))[0][0]
-            err = abs(y_hat - ya[i])
-            maesa_f.append(err)
-
-        for i in range(0,len(xa)):
-            y_hat = lrAfull.predict(x0[i].reshape(1,n_steps,6))[0][0]
-            err = abs(y_hat - y0[i])
-            maes0_f.append(err)
-
-        scoreAFull = 0
-        scoreBFull = 0
-
-        maes_ = [maes0_f, maesa_f, maesb_f]
-
-        for ind in range(0, len(seqLSTMmem)):
-            print("Score for task "+str(ind)+" with full memory:" + str(np.mean(maes_[ind])))
-
-
-
-
-        df = pd.DataFrame.from_dict({"ScoreA without memory": np.mean(maes_sum[0]) ,
-                           "ScoreB without memory": np.mean(maes_sum[1]),
-                            "ScoreC without memory": np.mean(maes_sum[2]),
-
-                           "ScoreA with selective memory": np.mean(maes_s[0]),
-                           "ScoreB with selective memory": np.mean(maes_s[1]),
-                            "ScoreC with selective memory": np.mean(maes_s[2]),
-
-                           "ScoreA with full memory": np.mean(maes_[0]),
-                           "ScoreB with full memory": np.mean(maes_[1]),
-                        "ScoreC with full memory": np.mean(maes_[2]),
-
-                           },orient='index')
-        #df.to_csv('./AE_files/'+alg+'.csv')
+        df.to_csv('./AE_files/perfLSTM.csv')
         return df
 
+    def plotPerfBetweenTASKS(self,):
+
+        perf = pd.read_csv("./AE_files/perfLSTM.csv")
+
+        perfSel = perf['sel'].values
+        perfWithout = perf['without'].values
+        tasksNames = []
+        for k in range(0,len(perfSel)):
+
+            tasksNames.append("TASK {}".format(k))
+
+        plt.plot(tasksNames, perfSel, c = 'red', label='LSTM Perf with memory between tasks')
+        plt.plot(tasksNames, perfWithout, c='blue', label='LSTM Perf without memory between tasks')
+        plt.xlabel("TASKS")
+        plt.ylabel("MAE")
+        plt.grid()
+        plt.legend()
+        plt.show()
 
     def runAlgorithmsforEvaluation(self,  alg, seqLen):
         memories = None
+        methods = ['seq', 'mem']
         if alg!='RND':
             dfs = []
             memories = []
@@ -1154,7 +1001,7 @@ class AE_detect():
 
                 memories.append(memory)
 
-            df = self.trainingBaselinesForFOCestimation(tasksNew, memory, 2, memories)
+            df = self.trainingBaselinesForFOCestimation(tasksNew, memory, 2, memories, methods)
             dfs.append(df)
 
             merged = pd.concat(dfs)
@@ -1180,6 +1027,9 @@ def main():
     #return
     # memory = pd.read_csv('./AE_files/selectiveMemory_ExtractedOfTaskA.csv', ).values
     aedetect = AE_detect()
+
+    aedetect.plotPerfBetweenTASKS()
+    return
 
     lenMemories = aedetect.runAlgorithmsforEvaluation('LR', lenS )
     pd.DataFrame({'memories':lenMemories}).to_csv('./AE_files/lenMemories.csv')
