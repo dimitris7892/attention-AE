@@ -42,11 +42,11 @@ import pyearth as sp
 import extractSequentialTasks as extTasks
 import openpyxl
 from sklearn.metrics import mean_squared_error as mse
+from tensorflow.keras.callbacks import Callback, LambdaCallback
+#tf.compat.v1.disable_eager_execution()
+
 
 extasks = extTasks.extractSequencialTasks()
-
-
-
 trData = extasks.getData()
 
 raw_seq = trData#[:4000]
@@ -60,10 +60,142 @@ tasksA=[]
 tasksB=[]
 tasksAMem=[]
 tasksBMem=[]
-lenS = 1000
+lenS = 100
 start = 13000
-tasksNew = extasks.exctractTasks(2, 20, 1000)
+tasksNew = extasks.exctractTasks(10, 20, 1000)
 
+def ApEn(self, U, m, r) -> float:
+    """Approximate_entropy."""
+
+    def _maxdist(x_i, x_j):
+        return max([abs(ua - va) for ua, va in zip(x_i, x_j)])
+
+    def _phi(m):
+        x = [[U[j] for j in range(i, i + m - 1 + 1)] for i in range(N - m + 1)]
+        C = [
+            len([1 for x_j in x if _maxdist(x_i, x_j) <= r]) / (N - m + 1.0)
+            for x_i in x
+        ]
+        return (N - m + 1.0) ** (-1) * sum(np.log(C))
+
+    N = len(U)
+
+    return abs(_phi(m + 1) - _phi(m))
+
+def entropy(self, Y):
+    """
+    Also known as Shanon Entropy
+    Reference: https://en.wikipedia.org/wiki/Entropy_(information_theory)
+    """
+    unique, count = np.unique(Y, return_counts=True, axis=0)
+    prob = count / len(Y)
+    en = np.sum((-1) * prob * np.log2(prob))
+    return en
+
+def pointInRect(self, point, rect):
+    x1, y1 = rect.xy
+    w, h = rect.get_bbox().width, rect.get_bbox().height
+    x2, y2 = x1 + w, y1 + h
+    x, y = point
+    if (x1 < x and x < x2):
+        if (y1 < y and y < y2):
+            return True
+    return False
+
+def boxCountingMethod(self, sequence, ylabel, width=None, height=None):
+    width = 100
+    height = 1
+    ax = plt.gca()
+    colors = ['blue', 'red']
+    colorSeq = ['green', 'black']
+    labels = ['TASKA', 'TASKB']
+    counters = []
+    rectsDicts = []
+    for i in range(0, len(sequence)):
+
+        rectsDict = {'rects': []}
+        for k in range(0, lenS, width):  ##columns
+            for n in range(0, int(max(sequence[i])) + 1):  # rows
+                rect = patches.Rectangle((k, n), width, height, linewidth=1, edgecolor=colors[i], facecolor='none')
+                item = {}
+                item['visited'] = False
+                item['rect'] = rect
+                rectsDict['rects'].append(item)
+
+                # ax.add_patch(rect)
+        plt.plot(sequence[i], c=colorSeq[i], label=labels[i])
+        # Add the patch to the Axes
+        rectsVisited = []
+        # plt.show()
+        counter = 0
+        for n in range(0, len(sequence[i])):
+            for rect in rectsDict['rects']:
+                if pointInRect((n, sequence[i][n]), rect['rect']) and rect['visited'] == False:
+                    counter += 1
+                    rect['visited'] = True
+                    rectsDict['rects'].remove(rect)
+                    rectsVisited.append(rect['rect'])
+                    break
+        counters.append(counter)
+        for rect in rectsVisited:
+            ax.add_patch(rect)
+
+        plt.xlabel('time')
+        plt.ylabel(ylabel)
+        rectsDicts.append(rectsVisited)
+    plt.title('Fractal dimension with box counting method for task A: ' + str(counters[0]) + " for task B: " + str(
+        counters[1]) + " with τ = " + str(width) + " and α = " + str(height))
+    plt.legend()
+
+    dictA = rectsDicts[0]
+    dictB = rectsDicts[1]
+    filteredSeqAs = []
+    indices = []
+
+    k = 0
+    xis = []
+    for i in range(0, len(dictB)):  ##iterate rects of B
+        filteredSeqA = []
+        indices = []
+        xi = int(dictB[i].xy[0])
+        xi_hat = int(dictB[i].get_bbox().width)
+        xis.append(xi)
+        if xi != xis[i - 1] or i == 0:
+            for n in range(xi, xi + xi_hat):
+                if pointInRect((n, sequence[0][n]), dictB[i]) == False:
+                    # ax.add_patch(rect['rect'])
+                    flag = True
+                    filteredSeqA.append(sequence[0][n])
+
+                    indices.append(n)
+        # ax.add_patch(plt.plot(filteredSeqA))
+        filteredSeqAs.append(indices)
+
+    print(len(indices))
+
+    # plt.show()
+    return tasksA[0][list(np.concatenate(filteredSeqAs).astype(int))]
+    # print("Fractal dimension: "+str(counter))
+
+    # Joint Entropy
+
+def jEntropy(self, Y, X):
+    """
+    H(Y;X)
+    Reference: https://en.wikipedia.org/wiki/Joint_entropy
+    """
+    YX = np.c_[Y, X]
+    return entropy(YX)
+
+    # Conditional Entropy
+
+def cEntropy(self, Y, X):
+    """
+    conditional entropy = Joint Entropy - Entropy of X
+    H(Y|X) = H(Y;X) - H(X)
+    Reference: https://en.wikipedia.org/wiki/Conditional_entropy
+    """
+    return jEntropy(Y, X) - entropy(X)
 
 class Sampling(layers.Layer):
     """Uses (z_mean, z_log_var) to sample z, the vector encoding a time series."""
@@ -75,7 +207,13 @@ class Sampling(layers.Layer):
         epsilon = tf.keras.backend.random_normal(shape=(batch, dim))
         return z_mean + tf.exp(0.5 * z_log_var) * epsilon
 
+class NewCallback(Callback):
 
+   def __init__(self, alpha):
+        self.alpha = alpha
+
+   def on_epoch_end(self, epoch, logs = {}):
+       K.set_value(self.alpha, K.get_value(self.alpha))
 
 class VAE(keras.Model):
     def __init__(self, encoder, decoder, **kwargs):
@@ -218,11 +356,59 @@ class LSTM_AE(keras.Model):
         }
 
 
+weightsPrev = tf.convert_to_tensor(np.zeros(shape=(6,)))
+loss_tracker = keras.metrics.Mean(name="loss")
+
+class Base_Learner(keras.Model):
+
+
+    def train_step(self, data):
+        global weightsPrev
+        # Unpack the data. Its structure depends on your model and
+        # on what you pass to `fit()`.
+        x, y = data
+
+        with tf.GradientTape() as tape:
+            y_pred = self(x, training=True)  # Forward pass
+            # Compute the loss value
+            # Compute our own loss
+
+            loss = keras.losses.mean_squared_error(y, y_pred) #+ keras.losses.mean_squared_error(weightsPrev, self.trainable_weights[6])
+
+        print(weightsPrev)
+        print(self.trainable_weights[6])
+        # Compute gradients
+        trainable_weights = self.trainable_weights
+        gradients = tape.gradient(loss, trainable_weights)
+        # Update weights
+        self.optimizer.apply_gradients(zip(gradients, trainable_weights))
+        # Update metrics (includes the metric that tracks the loss)
+        loss_tracker.update_state(loss)
+        self.compiled_metrics.update_state(y, y_pred)
+        # Return a dict mapping metric names to current value
+
+        return {
+            "loss": loss_tracker.result(),
+
+        }
+
+    @property
+    def metrics(self):
+        # We list our `Metric` objects here so that `reset_states()` can be
+        # called automatically at the start of each epoch
+        # or at the start of `evaluate()`.
+        # If you don't implement this property, you have to call
+        # `reset_states()` yourself at the time of your choosing.
+
+        return [loss_tracker]
+
 class AE_detect():
+
 
     def __init__(self):
 
         self.weights = []
+        self.weightsDict = {}
         '''initialize window indentification AE '''
         encoderA, decoderA = self.windwowIdentificationModel()
         # print(encoderA.summary())
@@ -230,139 +416,9 @@ class AE_detect():
         self.windAEa = LSTM_AE_IW(encoderA, decoderA)
         self.windAEa.compile(optimizer=keras.optimizers.Adam())
 
-    def ApEn(self, U, m, r) -> float:
-        """Approximate_entropy."""
-
-        def _maxdist(x_i, x_j):
-            return max([abs(ua - va) for ua, va in zip(x_i, x_j)])
-
-        def _phi(m):
-            x = [[U[j] for j in range(i, i + m - 1 + 1)] for i in range(N - m + 1)]
-            C = [
-                len([1 for x_j in x if _maxdist(x_i, x_j) <= r]) / (N - m + 1.0)
-                for x_i in x
-            ]
-            return (N - m + 1.0) ** (-1) * sum(np.log(C))
-
-        N = len(U)
-
-        return abs(_phi(m + 1) - _phi(m))
-
-    def entropy(self, Y):
-        """
-        Also known as Shanon Entropy
-        Reference: https://en.wikipedia.org/wiki/Entropy_(information_theory)
-        """
-        unique, count = np.unique(Y, return_counts=True, axis=0)
-        prob = count/len(Y)
-        en = np.sum((-1)*prob*np.log2(prob))
-        return en
-
-    def pointInRect(self, point,rect):
-        x1, y1 = rect.xy
-        w, h = rect.get_bbox().width , rect.get_bbox().height
-        x2, y2 = x1+w, y1+h
-        x, y = point
-        if (x1 < x and x < x2):
-            if (y1 < y and y < y2):
-                return True
-        return False
-
-    def boxCountingMethod(self, sequence,ylabel,width = None, height = None):
-        width = 100
-        height = 1
-        ax = plt.gca()
-        colors =['blue','red']
-        colorSeq = ['green', 'black']
-        labels = ['TASKA','TASKB']
-        counters = []
-        rectsDicts = []
-        for i in  range(0,len(sequence)):
-
-            rectsDict = {'rects':[]}
-            for k in range(0,lenS,width): ##columns
-                for n in range(0,int(max(sequence[i]))+1): #rows
-                    rect = patches.Rectangle((k, n), width, height, linewidth=1, edgecolor=colors[i], facecolor='none')
-                    item = {}
-                    item['visited'] = False
-                    item['rect'] = rect
-                    rectsDict['rects'].append(item)
-
-                    #ax.add_patch(rect)
-            plt.plot(sequence[i],c=colorSeq[i],label=labels[i])
-            # Add the patch to the Axes
-            rectsVisited = []
-            #plt.show()
-            counter = 0
-            for n in range(0,len(sequence[i])):
-                for rect in rectsDict['rects']:
-                    if pointInRect((n,sequence[i][n]),rect['rect']) and rect['visited']==False:
-                        counter += 1
-                        rect['visited'] = True
-                        rectsDict['rects'].remove(rect)
-                        rectsVisited.append(rect['rect'])
-                        break
-            counters.append(counter)
-            for rect in rectsVisited:
-                ax.add_patch(rect)
-
-            plt.xlabel('time')
-            plt.ylabel(ylabel)
-            rectsDicts.append(rectsVisited)
-        plt.title('Fractal dimension with box counting method for task A: '+ str(counters[0]) +" for task B: "+str(counters[1])+ " with τ = "+str(width)+" and α = " + str(height))
-        plt.legend()
-
-
-        dictA  = rectsDicts[0]
-        dictB = rectsDicts[1]
-        filteredSeqAs = []
-        indices = []
-
-
-        k=0
-        xis = []
-        for i in range(0,len(dictB)): ##iterate rects of B
-                filteredSeqA = []
-                indices = []
-                xi = int(dictB[i].xy[0])
-                xi_hat = int(dictB[i].get_bbox().width)
-                xis.append(xi)
-                if xi != xis[i-1] or i ==0:
-                    for n in range(xi,xi+xi_hat):
-                        if pointInRect((n, sequence[0][n]), dictB[i]) == False :
-                             #ax.add_patch(rect['rect'])
-                             flag = True
-                             filteredSeqA.append(sequence[0][n])
-
-                             indices.append(n)
-                #ax.add_patch(plt.plot(filteredSeqA))
-                filteredSeqAs.append(indices)
-
-        print(len(indices))
-
-        #plt.show()
-        return tasksA[0][list(np.concatenate(filteredSeqAs).astype(int))]
-        #print("Fractal dimension: "+str(counter))
-
-    #Joint Entropy
-    def jEntropy(self, Y,X):
-        """
-        H(Y;X)
-        Reference: https://en.wikipedia.org/wiki/Joint_entropy
-        """
-        YX = np.c_[Y,X]
-        return entropy(YX)
-
-    #Conditional Entropy
-    def cEntropy(self, Y, X):
-        """
-        conditional entropy = Joint Entropy - Entropy of X
-        H(Y|X) = H(Y;X) - H(X)
-        Reference: https://en.wikipedia.org/wiki/Conditional_entropy
-        """
-        return jEntropy(Y, X) - entropy(X)
 
     def custom_loss(self, y_true, y_pred):
+        print(self.weightsDict)
         return tf.keras.losses.mean_squared_error(y_true, y_pred) + tf.keras.losses.mean_squared_error(self.weightsCurr , self.weightsPrev)
 
     def vae_LSTM_Model(self, ):
@@ -759,18 +815,40 @@ class AE_detect():
 
         model.add(keras.layers.Dense(20, ))
 
-        model.add(keras.layers.Dense(10, ))
+        model.add(keras.layers.Dense(6, ))
 
         model.add(keras.layers.Dense(1))
 
-        model.compile(loss=self.custom_loss,
+        model.compile(loss='mse',
                       optimizer=keras.optimizers.Adam())  # experimental_run_tf_function=False )
+        # print(model.summary())
+
+        return model
+
+    def customBaselineLearner(self, ):
+
+        # create model
+        inputs = keras.Input(shape=(n_steps, 6,), )
+
+        x1 = keras.layers.LSTM(50,input_shape=(n_steps, 6,), )(inputs)  # return_sequences=True
+
+        x2 = keras.layers.Dense(20, )(x1)
+
+        x3 = keras.layers.Dense(6, )(x2)
+
+        outputs = keras.layers.Dense(1)(x3)
+
+        model = Base_Learner(inputs, outputs)
+
+        model.compile(optimizer=keras.optimizers.Adam())  # experimental_run_tf_function=False )
         # print(model.summary())
 
         return model
 
     def trainingBaselinesForFOCestimation(self, seqLSTMmem, memoryA, currInd , memories, methods):
 
+        #tf.compat.v1.disable_eager_execution()
+        global weightsPrev
         print("Memory of taskA: "+str(len(memoryA)))
         maesprev_s = [0]
         maescurr_s = [0]
@@ -784,7 +862,7 @@ class AE_detect():
         maesb_f = [0]
         maes0_f = [0]
         self.weightsCurr = tf.convert_to_tensor([0.0])
-        self.weightsPrev = tf.convert_to_tensor([0.0])
+        #self.weightsPrev = tf.convert_to_tensor([0.0])
 
         if 'seq' in methods:
             print("LSTM training  of tasks sequentially  . . .")
@@ -829,7 +907,10 @@ class AE_detect():
             #for i in range(0,len(seqLSTMmem)):
 
             #currTask = seqLSTMmem[i]
-            lrAB = self.baselineLearner()
+            #lrAB = self.baselineLearner()
+            lrAB = self.customBaselineLearner()
+            #self.weightsDict = {}
+            print_weights = LambdaCallback( on_epoch_end=lambda epoch, logs:  self.weightsDict.update({epoch:tf.ragged.constant(lrAB.get_weights()[6])}) )
 
 
             for ind in range(0,len(seqLSTMmem)):
@@ -861,16 +942,18 @@ class AE_detect():
                 if ind == 0:
 
                     self.weightsCurr = tf.convert_to_tensor([0.0])
-                    self.weightsPrev = tf.convert_to_tensor([0.0])
+                    weightsPrev = tf.convert_to_tensor(np.zeros(shape=(6,)))
                     lrAB.fit(batchesX, batchesY, epochs=20)
 
                 else:
-                    self.weightsCurr = tf.ragged.constant(lrAB.get_weights()[0])
-                    self.weightsPrev = tf.ragged.constant(self.weights[ind - 1][0])
-
-                    lrAB.fit(batchesXsel, batchesYsel, epochs=20)
+                    self.weightsCurr = tf.ragged.constant(lrAB.get_weights()[6])
+                    weightsPrev = tf.ragged.constant(self.weights[ind - 1][6])
+                    #weightsPrev = self.weights[ind - 1][6]
+                    print("Before Fit: " + str(weightsPrev))
+                    lrAB.fit(batchesXsel,  batchesYsel, epochs=20, callbacks=[print_weights])
 
                 self.weights.append(lrAB.get_weights())
+                #print(self.weightsDict)
 
                 maes = []
                 pes = []
@@ -988,7 +1071,7 @@ class AE_detect():
 
     def runAlgorithmsforEvaluation(self,  alg, seqLen):
         memories = None
-        methods = ['seq', 'mem']
+        methods = ['seq','mem']
         if alg!='RND':
             dfs = []
             memories = []
