@@ -357,10 +357,22 @@ class LSTM_AE(keras.Model):
 
 
 weightsPrev = tf.convert_to_tensor(np.zeros(shape=(6,)))
-loss_tracker = keras.metrics.Mean(name="loss")
+loss_tracker = keras.metrics.MeanSquaredError(name="loss")
+#mae_metric = keras.metrics.MeanAbsoluteError(name="mae")
+
 
 class Base_Learner(keras.Model):
 
+    def __init__(self, model_):
+        super(Base_Learner, self).__init__()
+        self.model = model_
+
+    '''def compile(self, optimizer):
+        super(Base_Learner, self).compile()
+        self.optimizer = optimizer'''
+
+    def call(self,  inputs, *args, **kwargs):
+        return self.model(inputs)
 
     def train_step(self, data):
         global weightsPrev
@@ -369,28 +381,27 @@ class Base_Learner(keras.Model):
         x, y = data
 
         with tf.GradientTape() as tape:
-            y_pred = self(x, training=True)  # Forward pass
+            y_pred = self.model(x, training=True)  # Forward pass
             # Compute the loss value
             # Compute our own loss
 
-            loss = keras.losses.mean_squared_error(y, y_pred) #+ keras.losses.mean_squared_error(weightsPrev, self.trainable_weights[6])
+            #loss = keras.losses.mean_squared_error(y, y_pred) #+ keras.losses.mean_squared_error(weightsPrev, self.trainable_weights[6])
+            loss = self.compiled_loss(y, y_pred, )
 
         print(weightsPrev)
-        print(self.trainable_weights[6])
+        print(self.model.trainable_weights[6])
         # Compute gradients
-        trainable_weights = self.trainable_weights
+        trainable_weights = self.model.trainable_weights
         gradients = tape.gradient(loss, trainable_weights)
         # Update weights
         self.optimizer.apply_gradients(zip(gradients, trainable_weights))
         # Update metrics (includes the metric that tracks the loss)
-        loss_tracker.update_state(loss)
+        #loss_tracker.update_state(loss, y_pred)
         self.compiled_metrics.update_state(y, y_pred)
-        # Return a dict mapping metric names to current value
+        #mae_metric.update_state(y, y_pred)
+        return {"loss": loss_tracker.result() }
 
-        return {
-            "loss": loss_tracker.result(),
 
-        }
 
     @property
     def metrics(self):
@@ -400,7 +411,7 @@ class Base_Learner(keras.Model):
         # If you don't implement this property, you have to call
         # `reset_states()` yourself at the time of your choosing.
 
-        return [loss_tracker]
+        return [loss_tracker,]
 
 class AE_detect():
 
@@ -828,19 +839,16 @@ class AE_detect():
     def customBaselineLearner(self, ):
 
         # create model
-        inputs = keras.Input(shape=(n_steps, 6,), )
+        model_ = keras.models.Sequential([ keras.Input(shape=(n_steps, 6,), ),
+                                  keras.layers.LSTM(50, ),
+                                  keras.layers.Dense(20, ),
+                                  keras.layers.Dense(6),
+                                  keras.layers.Dense(1)])
 
-        x1 = keras.layers.LSTM(50,input_shape=(n_steps, 6,), )(inputs)  # return_sequences=True
 
-        x2 = keras.layers.Dense(20, )(x1)
+        model = Base_Learner(model_)
 
-        x3 = keras.layers.Dense(6, )(x2)
-
-        outputs = keras.layers.Dense(1)(x3)
-
-        model = Base_Learner(inputs, outputs)
-
-        model.compile(optimizer=keras.optimizers.Adam())  # experimental_run_tf_function=False )
+        model.compile(optimizer=keras.optimizers.Adam(), loss = 'mse')  # experimental_run_tf_function=False )
         # print(model.summary())
 
         return model
@@ -950,7 +958,7 @@ class AE_detect():
                     weightsPrev = tf.ragged.constant(self.weights[ind - 1][6])
                     #weightsPrev = self.weights[ind - 1][6]
                     print("Before Fit: " + str(weightsPrev))
-                    lrAB.fit(batchesXsel,  batchesYsel, epochs=20, callbacks=[print_weights])
+                    lrAB.fit(batchesXsel,  batchesYsel, epochs=20, )
 
                 self.weights.append(lrAB.get_weights())
                 #print(self.weightsDict)
@@ -1071,7 +1079,7 @@ class AE_detect():
 
     def runAlgorithmsforEvaluation(self,  alg, seqLen):
         memories = None
-        methods = ['seq','mem']
+        methods = ['mem']
         if alg!='RND':
             dfs = []
             memories = []
@@ -1108,11 +1116,11 @@ def main():
 
     #plotDistributions(seqLSTMA,seqLSTMB,'foc')
     #return
-    # memory = pd.read_csv('./AE_files/selectiveMemory_ExtractedOfTaskA.csv', ).values
+    #memory = pd.read_csv('./AE_files/selectiveMemory_ExtractedOfTaskA.csv', ).values
     aedetect = AE_detect()
 
-    aedetect.plotPerfBetweenTASKS()
-    return
+    #aedetect.plotPerfBetweenTASKS()
+    #return
 
     lenMemories = aedetect.runAlgorithmsforEvaluation('LR', lenS )
     pd.DataFrame({'memories':lenMemories}).to_csv('./AE_files/lenMemories.csv')
